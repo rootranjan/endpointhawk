@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EndPointHawk - API Security Analysis</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <i class="fas fa-shield-alt"></i>
+                <h1>EndPointHawk</h1>
+            </div>
+            <p class="subtitle">API Security Analysis & Attack Surface Mapping</p>
+        </header>
+
+        <main class="main-content">
+            <!-- New Scan Section -->
+            <section class="scan-section">
+                <h2><i class="fas fa-search"></i> New Security Scan</h2>
+                <form class="scan-form" id="scanForm">
+                    <div class="form-group">
+                        <label for="repoPath">Repository Path or URL:</label>
+                        <input type="text" id="repoPath" name="repoPath" placeholder="Enter local path or Git URL" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="outputFormat">Output Format:</label>
+                        <select id="outputFormat" name="outputFormat">
+                            <option value="terminal">Terminal</option>
+                            <option value="json">JSON</option>
+                            <option value="csv">CSV</option>
+                            <option value="sarif">SARIF</option>
+                            <option value="html">HTML</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="frameworks">Frameworks to Detect:</label>
+                        <select id="frameworks" name="frameworks" multiple>
+                            <option value="all" selected>All Frameworks</option>
+                            <option value="nestjs">NestJS</option>
+                            <option value="express">Express</option>
+                            <option value="fastapi">FastAPI</option>
+                            <option value="spring">Spring Boot</option>
+                            <option value="go">Go</option>
+                            <option value="django">Django</option>
+                            <option value="flask">Flask</option>
+                            <option value="nextjs">NextJS</option>
+                            <option value="infrastructure">Infrastructure</option>
+                            <option value="flutter">Flutter</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="enableAI" name="enableAI">
+                            <span class="checkbox-label">Enable AI Analysis</span>
+                        </label>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-play"></i> Start Security Scan
+                    </button>
+                </form>
+            </section>
+
+            <!-- Statistics Section -->
+            <section class="stats-section">
+                <h2><i class="fas fa-chart-bar"></i> Security Statistics</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3>Total Scans</h3>
+                            <p class="stat-number">{{ stats.total_scans or 0 }}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon high-risk">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3>High Risk Findings</h3>
+                            <p class="stat-number">{{ stats.high_risk_findings or 0 }}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-code"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3>APIs Detected</h3>
+                            <p class="stat-number">{{ stats.apis_detected or 0 }}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-bug"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3>Vulnerabilities</h3>
+                            <p class="stat-number">{{ stats.vulnerabilities or 0 }}</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Recent Scans Section -->
+            <section class="recent-scans">
+                <h2><i class="fas fa-history"></i> Recent Scans</h2>
+                <div id="recentScansList">
+                    <p>No recent scans found. Start your first security scan above.</p>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results-section" id="resultsSection" style="display: none;">
+                <h2><i class="fas fa-file-alt"></i> Scan Results</h2>
+                <div id="scanResults">
+                    <!-- Results will be populated here -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <h3>Running Security Scan...</h3>
+            <p>This may take a few minutes depending on the repository size.</p>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html> 
