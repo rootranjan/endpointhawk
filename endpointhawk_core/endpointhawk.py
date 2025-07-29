@@ -713,7 +713,7 @@ class AttackSurfaceScanner:
                     if self.config.include_commit_info:
                         for detector in self.detectors:
                             if hasattr(detector, 'add_commit_info_to_route'):
-                                route = detector.add_commit_info_to_route(route, self.config.repo_path)
+                                route = detector.add_commit_info_to_route(route, self.config.repo_path, self.config)
                                 break
                     
                     services[service_name].routes.append(route)

@@ -103,6 +103,21 @@ class GitInfoExtractor:
             abs_file_path = Path(file_path).resolve()
             rel_file_path = abs_file_path.relative_to(self.repo_path)
             
+            # First check if the file exists in HEAD
+            check_cmd = ['git', 'ls-files', str(rel_file_path)]
+            check_result = subprocess.run(
+                check_cmd,
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            # If file doesn't exist in HEAD, it's likely a new file
+            if check_result.returncode != 0 or not check_result.stdout.strip():
+                logger.debug(f"File {rel_file_path} does not exist in HEAD - likely a new file")
+                return self._empty_commit_info()
+            
             # Get the commit that last modified this line
             cmd = [
                 'git', 'blame', '-L', f'{line_number},{line_number}',
@@ -118,8 +133,13 @@ class GitInfoExtractor:
             )
             
             if result.returncode != 0:
-                logger.warning(f"Git blame failed for {file_path}:{line_number}: {result.stderr}")
-                return self._empty_commit_info()
+                # Check if it's a "no such path" error (file doesn't exist in HEAD)
+                if "fatal: no such path" in result.stderr:
+                    logger.debug(f"File {rel_file_path} does not exist in HEAD - likely a new file")
+                    return self._empty_commit_info()
+                else:
+                    logger.warning(f"Git blame failed for {file_path}:{line_number}: {result.stderr}")
+                    return self._empty_commit_info()
             
             return self._parse_blame_output(result.stdout, line_number)
             
@@ -142,6 +162,21 @@ class GitInfoExtractor:
             abs_file_path = Path(file_path).resolve()
             rel_file_path = abs_file_path.relative_to(self.repo_path)
             
+            # First check if the file exists in HEAD
+            check_cmd = ['git', 'ls-files', str(rel_file_path)]
+            check_result = subprocess.run(
+                check_cmd,
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            # If file doesn't exist in HEAD, it's likely a new file
+            if check_result.returncode != 0 or not check_result.stdout.strip():
+                logger.debug(f"File {rel_file_path} does not exist in HEAD - likely a new file")
+                return self._empty_commit_info()
+            
             # Get the most recent commit for this file
             cmd = [
                 'git', 'log', '-1', '--format=%H%n%an%n%ae%n%at%n%s',
@@ -157,8 +192,13 @@ class GitInfoExtractor:
             )
             
             if result.returncode != 0:
-                logger.warning(f"Git log failed for {file_path}: {result.stderr}")
-                return self._empty_commit_info()
+                # Check if it's a "no such path" error (file doesn't exist in HEAD)
+                if "fatal: no such path" in result.stderr:
+                    logger.debug(f"File {rel_file_path} does not exist in HEAD - likely a new file")
+                    return self._empty_commit_info()
+                else:
+                    logger.warning(f"Git log failed for {file_path}: {result.stderr}")
+                    return self._empty_commit_info()
             
             return self._parse_log_output(result.stdout)
             

@@ -222,7 +222,7 @@ class DirectoryComparator:
                             for route in file_routes:
                                 # Check if the directory is a git repository and add commit info
                                 if hasattr(detector, 'add_commit_info_to_route'):
-                                    detector.add_commit_info_to_route(route, str(directory))
+                                    detector.add_commit_info_to_route(route, str(directory), self.scanner.config)
                             
                             all_routes.extend(file_routes)
                             
@@ -278,7 +278,7 @@ class DirectoryComparator:
                             for route in file_routes:
                                 # Check if the directory is a git repository and add commit info
                                 if hasattr(detector, 'add_commit_info_to_route'):
-                                    detector.add_commit_info_to_route(route, str(directory))
+                                    detector.add_commit_info_to_route(route, str(directory), self.scanner.config)
                             
                             all_routes.extend(file_routes)
                             
