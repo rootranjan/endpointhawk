@@ -27,7 +27,7 @@ from datetime import datetime
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 from rich.table import Table
 from rich.panel import Panel
 from rich import print as rprint
@@ -74,6 +74,13 @@ class AttackSurfaceScanner:
         self.console = console
         self.logger = self._setup_logging()
         self.config_manager = config_manager
+        
+        # Handle auto-detection if frameworks list is empty
+        if not self.config.frameworks:
+            self.logger.info("No frameworks specified, auto-detecting...")
+            auto_detected = auto_detect_frameworks(self.config.repo_path)
+            self.config.frameworks = auto_detected if auto_detected else [Framework.EXPRESS]  # Default fallback
+            self.logger.info(f"Auto-detected frameworks: {self.config.frameworks}")
         
         # Initialize detectors
         self.detectors = self._initialize_detectors()
