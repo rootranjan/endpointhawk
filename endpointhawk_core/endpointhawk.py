@@ -366,8 +366,61 @@ class AttackSurfaceScanner:
         cache_hits = 0
         cache_misses = 0
         
-        # Create progress bar for sequential scanning
-        from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
+        # Docker-specific progress configuration
+        is_docker = os.environ.get('DOCKER_CONTAINER', 'false').lower() == 'true'
+        refresh_rate = 1 if is_docker else 2  # Slower refresh in Docker to prevent buffering
+        
+        # Use fallback progress for Docker containers
+        if is_docker:
+            # Simple progress without rich
+            self.console.print(f"[cyan]🔍 Analyzing {len(files):,} files sequentially...[/cyan]")
+            
+            # Force immediate output
+            import sys
+            sys.stdout.flush()
+            
+            for i, file_path in enumerate(files):
+                # Check cache first
+                file_hash = self.performance_optimizer.calculate_file_hash(file_path)
+                cached_routes = self.performance_optimizer.cache.get_cached_routes(file_path, file_hash)
+                
+                if cached_routes:
+                    file_routes = cached_routes
+                    cache_hits += 1
+                else:
+                    file_routes = self._scan_single_file(file_path)
+                    cache_misses += 1
+                    
+                    # Cache the results
+                    if file_routes:
+                        try:
+                            framework = self._detect_primary_framework(file_path)
+                            file_size = os.path.getsize(file_path)
+                            self.performance_optimizer.cache.cache_routes(
+                                file_path, file_hash, file_routes, framework, file_size
+                            )
+                        except Exception:
+                            # Silently continue if caching fails - the scan is more important than caching
+                            pass
+                
+                # Process routes
+                if file_routes:
+                    self._add_routes_to_services(services, file_path, file_routes)
+                
+                # Update progress every 10 files or at the end
+                if (i + 1) % 10 == 0 or i == len(files) - 1:
+                    progress_pct = ((i + 1) / len(files)) * 100
+                    # Use print with flush=True for immediate output
+                    print(f"\r[green]Progress: {progress_pct:.1f}% ({i + 1}/{len(files)} files)[/green]", end="", flush=True)
+            
+            # Add newline after progress is complete
+            print()
+            
+            # Update cache metrics
+            self.performance_optimizer.metrics.cache_hits = cache_hits
+            self.performance_optimizer.metrics.cache_misses = cache_misses
+            
+            return services
         
         with Progress(
             SpinnerColumn(),
@@ -377,7 +430,9 @@ class AttackSurfaceScanner:
             TextColumn("({task.completed}/{task.total} files)"),
             TimeElapsedColumn(),
             console=self.console,
-            transient=False
+            transient=False,
+            refresh_per_second=refresh_rate,
+            expand=False
         ) as progress:
             
             # Create the main task
@@ -432,6 +487,10 @@ class AttackSurfaceScanner:
         # Create progress bar for parallel scanning
         from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
         
+        # Docker-specific progress configuration
+        is_docker = os.environ.get('DOCKER_CONTAINER', 'false').lower() == 'true'
+        refresh_rate = 1 if is_docker else 2  # Slower refresh in Docker to prevent buffering
+        
         with Progress(
             SpinnerColumn(),
             TextColumn("[bold blue]🔍 Analyzing routes"),
@@ -440,7 +499,9 @@ class AttackSurfaceScanner:
             TextColumn("({task.completed}/{task.total} files)"),
             TimeElapsedColumn(),
             console=self.console,
-            transient=False
+            transient=False,
+            refresh_per_second=refresh_rate,
+            expand=False
         ) as progress:
             
             # Create the main task
@@ -513,6 +574,10 @@ class AttackSurfaceScanner:
         # Create progress bar for chunk processing (only for large repos)
         from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
         
+        # Docker-specific progress configuration
+        is_docker = os.environ.get('DOCKER_CONTAINER', 'false').lower() == 'true'
+        refresh_rate = 1 if is_docker else 2  # Slower refresh in Docker to prevent buffering
+        
         with Progress(
             SpinnerColumn(),
             TextColumn("[bold blue]🔍 Analyzing routes"),
@@ -521,7 +586,9 @@ class AttackSurfaceScanner:
             TextColumn("({task.completed}/{task.total} chunks)"),
             TimeElapsedColumn(),
             console=self.console,
-            transient=False
+            transient=False,
+            refresh_per_second=refresh_rate,
+            expand=False
         ) as progress:
             
             # Create the main task

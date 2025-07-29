@@ -35,6 +35,10 @@ USER endpointhawk
 # Set environment variables
 ENV PYTHONPATH="/app"
 ENV PYTHONUNBUFFERED=1
+ENV DOCKER_CONTAINER=true
+ENV PYTHONIOENCODING=utf-8
+ENV FORCE_COLOR=1
+ENV TERM=xterm-256color
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
