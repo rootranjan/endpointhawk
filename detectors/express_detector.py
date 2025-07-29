@@ -923,16 +923,6 @@ class ExpressDetector(BaseDetector):
             if re.search(indicator, content, re.IGNORECASE | re.MULTILINE):
                 return True
         
-        # Check for modern Express patterns
-        for pattern in self.modern_patterns:
-            if re.search(pattern, content, re.IGNORECASE | re.MULTILINE):
-                return True
-        
-        # Check for proxy and gateway patterns (common in microservices)
-        for pattern in self.proxy_patterns:
-            if re.search(pattern, content, re.IGNORECASE | re.MULTILINE):
-                return True
-        
         # Enhanced content-based detection
         express_keywords = [
             'express', 'router', 'middleware', 'app.listen',
@@ -962,8 +952,8 @@ class ExpressDetector(BaseDetector):
             r'\.test\.(js|ts|jsx|tsx)$',
             r'\.spec\.(js|ts|jsx|tsx)$',
             r'__tests__/',
-            r'tests?/',
-            r'test/',
+            r'/tests?/',
+            r'/test/',
             
             # Build and config files
             r'webpack\.config\.(js|ts)$',
@@ -981,25 +971,25 @@ class ExpressDetector(BaseDetector):
             # Documentation
             r'README\.(md|txt)$',
             r'\.md$',
-            r'docs?/',
-            r'documentation/',
+            r'/docs?/',
+            r'/documentation/',
             
             # Build outputs and dependencies
-            r'node_modules/',
-            r'dist/',
-            r'build/',
-            r'coverage/',
+            r'/node_modules/',
+            r'/dist/',
+            r'/build/',
+            r'/coverage/',
             r'\.nyc_output/',
             r'\.cache/',
             
             # Scripts and utilities
-            r'scripts?/k6/',
-            r'scripts?/build/',
-            r'scripts?/deploy/',
-            r'utils?/',
-            r'helpers/',
-            r'lib/',
-            r'common/',
+            r'/scripts?/k6/',
+            r'/scripts?/build/',
+            r'/scripts?/deploy/',
+            r'/utils?/',
+            r'/helpers/',
+            r'/lib/',
+            r'/common/',
             
             # Service and utility files (CRITICAL: prevents auth.service.js false positives)
             r'\.service\.(js|ts)$',
@@ -1014,14 +1004,14 @@ class ExpressDetector(BaseDetector):
             r'\.decorator\.(js|ts)$',
             
             # Migration and seed files
-            r'migrations?/',
-            r'seeds?/',
-            r'seeders/',
+            r'/migrations?/',
+            r'/seeds?/',
+            r'/seeders/',
             
             # Type definitions
             r'\.d\.(ts|js)$',
-            r'types?/',
-            r'@types/',
+            r'/types?/',
+            r'/@types/',
             
             # Generated files
             r'\.generated\.(js|ts)$',
