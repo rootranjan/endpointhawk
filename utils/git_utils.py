@@ -31,6 +31,40 @@ class GitInfoExtractor:
         """
         self.repo_path = Path(repo_path).resolve()
         self._is_git_repo = self._validate_git_repo()
+        
+        # Configure Git for CI environments if needed
+        if self._is_git_repo:
+            self._configure_git_for_ci()
+    
+    def _configure_git_for_ci(self):
+        """Configure Git to handle CI environment ownership issues"""
+        try:
+            # Check if we're in a CI environment
+            ci_env = any([
+                os.environ.get('CI', '').lower() == 'true',
+                os.environ.get('GITLAB_CI', '').lower() == 'true',
+                os.environ.get('GITHUB_ACTIONS', '').lower() == 'true',
+                os.environ.get('JENKINS_URL'),
+                os.environ.get('BUILD_ID')
+            ])
+            
+            if ci_env:
+                # Add repository to safe.directory to handle ownership issues
+                repo_str = str(self.repo_path)
+                result = subprocess.run(
+                    ['git', 'config', '--global', '--add', 'safe.directory', repo_str],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                
+                if result.returncode == 0:
+                    logger.debug(f"Added {repo_str} to Git safe.directory for CI environment")
+                else:
+                    logger.warning(f"Failed to add {repo_str} to Git safe.directory: {result.stderr}")
+                    
+        except Exception as e:
+            logger.warning(f"Error configuring Git for CI environment: {e}")
     
     def _validate_git_repo(self) -> bool:
         """Validate that the path is a git repository"""

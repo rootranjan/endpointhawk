@@ -1508,6 +1508,18 @@ docker run --rm \
 
 ---
 
+## 📚 **Documentation**
+
+- **[Quick Start Guide](#-quick-start-guide)** - Get up and running in minutes
+- **[Installation Guide](#-installation-guide)** - Detailed installation instructions
+- **[Usage Examples](#-usage-examples)** - Common use cases and examples
+- **[Docker Guide](DOCKER.md)** - Containerized deployment and usage
+- **[CI/CD Integration Guide](CI_INTEGRATION.md)** - GitLab CI, GitHub Actions, and Jenkins integration
+- **[Security Findings](docs/security-findings.md)** - Understanding security analysis results
+- **[Contributing Guidelines](CONTRIBUTING.md)** - How to contribute to the project
+
+---
+
 **🦅 EndPointHawk - Securing APIs, one route at a time**
 
 *Built with ❤️ by the security community* 

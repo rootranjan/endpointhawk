@@ -1830,8 +1830,23 @@ async def _export_comparison_results(result: ComparisonResult, output_dir: str, 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"directory_comparison_{timestamp}.{output_format}"
+    # Check if we're in a CI environment and use consistent filename
+    ci_env = any([
+        os.environ.get('CI', '').lower() == 'true',
+        os.environ.get('GITLAB_CI', '').lower() == 'true',
+        os.environ.get('GITHUB_ACTIONS', '').lower() == 'true',
+        os.environ.get('JENKINS_URL'),
+        os.environ.get('BUILD_ID')
+    ])
+    
+    if ci_env:
+        # Use consistent filename for CI environments
+        filename = f"endpointhawk_comparison.{output_format}"
+    else:
+        # Use timestamped filename for local development
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"directory_comparison_{timestamp}.{output_format}"
+    
     file_path = output_path / filename
     
     try:
@@ -2039,6 +2054,39 @@ async def _run_git_comparison(config: ScanConfig, comparison_config: ComparisonC
         if verbose:
             console.print_exception()
         raise
+
+def _get_expected_output_filename(output_format: str = 'json', is_comparison: bool = False) -> str:
+    """
+    Get the expected output filename for CI environments.
+    
+    Args:
+        output_format: Output format (json, csv, html, etc.)
+        is_comparison: Whether this is a comparison report
+        
+    Returns:
+        Expected filename
+    """
+    # Check if we're in a CI environment
+    ci_env = any([
+        os.environ.get('CI', '').lower() == 'true',
+        os.environ.get('GITLAB_CI', '').lower() == 'true',
+        os.environ.get('GITHUB_ACTIONS', '').lower() == 'true',
+        os.environ.get('JENKINS_URL'),
+        os.environ.get('BUILD_ID')
+    ])
+    
+    if ci_env:
+        if is_comparison:
+            return f"endpointhawk_comparison.{output_format}"
+        else:
+            return f"endpointhawk_report.{output_format}"
+    else:
+        # For local development, use timestamped names
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if is_comparison:
+            return f"directory_comparison_{timestamp}.{output_format}"
+        else:
+            return f"endpointhawk_report_{timestamp}.{output_format}"
 
 @click.command()
 @click.option('--repo-path', help='Path to repository to scan')
