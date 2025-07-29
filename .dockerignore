@@ -1,13 +1,27 @@
-# Git and version control
+# Git
 .git
 .gitignore
 .gitattributes
 
-# Python cache and build files
-__pycache__
-*.pyc
-*.pyo
-*.pyd
+# Documentation (keep README.md for setup.py)
+CONTRIBUTING.md
+LICENSE
+SECURITY.md
+INSTALL.md
+OPTIMIZATIONS.md
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
 .Python
 build/
 develop-eggs/
@@ -24,6 +38,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
 # Virtual environments
 venv/
@@ -32,14 +47,23 @@ ENV/
 .venv/
 .env/
 
-# IDE and editor files
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
-# OS generated files
+# OS
 .DS_Store
 .DS_Store?
 ._*
@@ -48,45 +72,38 @@ ENV/
 ehthumbs.db
 Thumbs.db
 
-# Logs and temporary files
+# Logs
 *.log
-*.tmp
-*.temp
 logs/
 
-# Documentation and examples
-docs/
-*.md
-!README.md
-
-# Test files
-tests/
-test_*
-*_test.py
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Development files
-CONTRIBUTING.md
-SECURITY.md
-LICENSE
-setup.py
-MANIFEST.in
-
-# Cache and reports (will be mounted as volumes)
+# Cache
 cache/
-reports/
-*.html
-*.json
-*.csv
-*.sarif
+.cache/
 
-# Environment files
-.env
-.env.local
-.env.production
+# Reports - keep the directory but exclude generated files
+reports/*.json
+reports/*.csv
+reports/*.html
+reports/*.sarif
 
-# Docker files (except Dockerfile)
-docker-compose*.yml
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Docker
+Dockerfile*
+docker-compose*
 .dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+
+# Local config
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
