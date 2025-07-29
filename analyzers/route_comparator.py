@@ -80,12 +80,19 @@ class RouteComparator:
                 target_workspace = git_ops.create_temp_workspace()
                 
                 # Clone or copy repository to workspaces
-                if repo_info.get('url'):
+                # Prioritize local repository usage when local path is provided
+                is_local_path = os.path.exists(repo_path) and os.path.isdir(repo_path)
+                
+                if is_local_path:
+                    # Local repository - copy and checkout
+                    self._copy_and_checkout(repo_path, source_workspace, source_tag)
+                    self._copy_and_checkout(repo_path, target_workspace, target_tag)
+                elif repo_info.get('url'):
                     # Remote repository - clone each tag
                     git_ops.clone_repository(repo_info['url'], source_workspace, tag=source_tag)
                     git_ops.clone_repository(repo_info['url'], target_workspace, tag=target_tag)
                 else:
-                    # Local repository - copy and checkout
+                    # Fallback to local copy if no remote URL
                     self._copy_and_checkout(repo_path, source_workspace, source_tag)
                     self._copy_and_checkout(repo_path, target_workspace, target_tag)
                 
@@ -166,12 +173,19 @@ class RouteComparator:
                 target_workspace = git_ops.create_temp_workspace()
                 
                 # Clone or copy repository to workspaces
-                if repo_info.get('url'):
+                # Prioritize local repository usage when local path is provided
+                is_local_path = os.path.exists(repo_path) and os.path.isdir(repo_path)
+                
+                if is_local_path:
+                    # Local repository - copy and checkout
+                    self._copy_and_checkout(repo_path, source_workspace, source_branch)
+                    self._copy_and_checkout(repo_path, target_workspace, target_branch)
+                elif repo_info.get('url'):
                     # Remote repository - clone each branch
                     git_ops.clone_repository(repo_info['url'], source_workspace, branch=source_branch)
                     git_ops.clone_repository(repo_info['url'], target_workspace, branch=target_branch)
                 else:
-                    # Local repository - copy and checkout
+                    # Fallback to local copy if no remote URL
                     self._copy_and_checkout(repo_path, source_workspace, source_branch)
                     self._copy_and_checkout(repo_path, target_workspace, target_branch)
                 
@@ -249,11 +263,17 @@ class RouteComparator:
                 tag_workspace = git_ops.create_temp_workspace()
                 
                 # Clone or copy repository to workspace
-                if repo_info.get('url'):
+                # Prioritize local repository usage when local path is provided
+                is_local_path = os.path.exists(repo_path) and os.path.isdir(repo_path)
+                
+                if is_local_path:
+                    # Local repository - copy and checkout tag
+                    self._copy_and_checkout(repo_path, tag_workspace, tag)
+                elif repo_info.get('url'):
                     # Remote repository - clone tag
                     git_ops.clone_repository(repo_info['url'], tag_workspace, tag=tag)
                 else:
-                    # Local repository - copy and checkout tag
+                    # Fallback to local copy if no remote URL
                     self._copy_and_checkout(repo_path, tag_workspace, tag)
                 
                 # Compare current directory against tag workspace
