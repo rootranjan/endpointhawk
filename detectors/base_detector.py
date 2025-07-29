@@ -228,18 +228,23 @@ class BaseDetector(ABC):
         
         return True 
     
-    def add_commit_info_to_route(self, route: RouteInfo, repo_path: str) -> RouteInfo:
+    def add_commit_info_to_route(self, route: RouteInfo, repo_path: str, config=None) -> RouteInfo:
         """
         Add git commit information to a route.
         
         Args:
             route: RouteInfo object to enhance
             repo_path: Path to the git repository
+            config: ScanConfig object to check if commit info should be included
             
         Returns:
             Enhanced RouteInfo with commit information
         """
         try:
+            # Check if commit info should be included
+            if config and hasattr(config, 'include_commit_info') and not config.include_commit_info:
+                return route
+            
             if not route.file_path or not route.line_number:
                 return route
             
