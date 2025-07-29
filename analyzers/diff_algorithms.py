@@ -156,21 +156,21 @@ class AdvancedDiffEngine:
             source_group = source_by_semantic.get(signature, [])
             target_group = target_by_semantic.get(signature, [])
             
-            if not source_group and target_group:
-                # New semantic pattern
-                for route in target_group:
-                    changes.append(RouteChange(
-                        change_type="added",
-                        new_route=route,
-                        risk_impact=self._assess_semantic_risk(route, "added")
-                    ))
-            elif source_group and not target_group:
-                # Removed semantic pattern
+            if source_group and not target_group:
+                # New semantic pattern in source (ADDED in newer version)
                 for route in source_group:
                     changes.append(RouteChange(
-                        change_type="removed",
+                        change_type="ADDED",
+                        new_route=route,
+                        risk_impact=self._assess_semantic_risk(route, "ADDED")
+                    ))
+            elif not source_group and target_group:
+                # Removed semantic pattern from source (REMOVED from newer version)
+                for route in target_group:
+                    changes.append(RouteChange(
+                        change_type="REMOVED",
                         old_route=route,
-                        risk_impact=self._assess_semantic_risk(route, "removed")
+                        risk_impact=self._assess_semantic_risk(route, "REMOVED")
                     ))
             elif source_group and target_group:
                 # Compare within semantic group
@@ -203,21 +203,21 @@ class AdvancedDiffEngine:
             source_group = source_by_structure.get(structure, [])
             target_group = target_by_structure.get(structure, [])
             
-            if not source_group and target_group:
-                # New structural pattern
-                for route in target_group:
-                    changes.append(RouteChange(
-                        change_type="added",
-                        new_route=route,
-                        risk_impact=self._assess_structural_risk(route, "added")
-                    ))
-            elif source_group and not target_group:
-                # Removed structural pattern
+            if source_group and not target_group:
+                # New structural pattern in source (ADDED in newer version)
                 for route in source_group:
                     changes.append(RouteChange(
-                        change_type="removed",
+                        change_type="ADDED",
+                        new_route=route,
+                        risk_impact=self._assess_structural_risk(route, "ADDED")
+                    ))
+            elif not source_group and target_group:
+                # Removed structural pattern from source (REMOVED from newer version)
+                for route in target_group:
+                    changes.append(RouteChange(
+                        change_type="REMOVED",
                         old_route=route,
-                        risk_impact=self._assess_structural_risk(route, "removed")
+                        risk_impact=self._assess_structural_risk(route, "REMOVED")
                     ))
             else:
                 # Compare within structural group
@@ -247,22 +247,22 @@ class AdvancedDiffEngine:
         source_hash_set = set(source_hashes.keys())
         target_hash_set = set(target_hashes.keys())
         
-        # Added routes
-        for hash_val in target_hash_set - source_hash_set:
-            route = target_hashes[hash_val]
-            changes.append(RouteChange(
-                change_type="added",
-                new_route=route,
-                risk_impact=self._assess_basic_risk(route, "added")
-            ))
-        
-        # Removed routes
+        # Added routes (in source but not in target)
         for hash_val in source_hash_set - target_hash_set:
             route = source_hashes[hash_val]
             changes.append(RouteChange(
-                change_type="removed",
+                change_type="ADDED",
+                new_route=route,
+                risk_impact=self._assess_basic_risk(route, "ADDED")
+            ))
+        
+        # Removed routes (in target but not in source)
+        for hash_val in target_hash_set - source_hash_set:
+            route = target_hashes[hash_val]
+            changes.append(RouteChange(
+                change_type="REMOVED",
                 old_route=route,
-                risk_impact=self._assess_basic_risk(route, "removed")
+                risk_impact=self._assess_basic_risk(route, "REMOVED")
             ))
         
         return changes
@@ -287,22 +287,22 @@ class AdvancedDiffEngine:
         source_set = set(source_sigs.keys())
         target_set = set(target_sigs.keys())
         
-        # Added routes
-        for sig in target_set - source_set:
-            route = target_sigs[sig]
-            changes.append(RouteChange(
-                change_type="added",
-                new_route=route,
-                risk_impact=self._assess_basic_risk(route, "added")
-            ))
-        
-        # Removed routes
+        # Added routes (in source but not in target)
         for sig in source_set - target_set:
             route = source_sigs[sig]
             changes.append(RouteChange(
-                change_type="removed",
+                change_type="ADDED",
+                new_route=route,
+                risk_impact=self._assess_basic_risk(route, "ADDED")
+            ))
+        
+        # Removed routes (in target but not in source)
+        for sig in target_set - source_set:
+            route = target_sigs[sig]
+            changes.append(RouteChange(
+                change_type="REMOVED",
                 old_route=route,
-                risk_impact=self._assess_basic_risk(route, "removed")
+                risk_impact=self._assess_basic_risk(route, "REMOVED")
             ))
         
         return changes
@@ -378,18 +378,20 @@ class AdvancedDiffEngine:
         # Simple comparison within semantic group
         if len(source_group) != len(target_group):
             # Group size changed
-            if len(target_group) > len(source_group):
-                for i in range(len(source_group), len(target_group)):
+            if len(source_group) > len(target_group):
+                # More routes in source (ADDED in newer version)
+                for i in range(len(target_group), len(source_group)):
                     changes.append(RouteChange(
-                        change_type="added",
-                        new_route=target_group[i],
+                        change_type="ADDED",
+                        new_route=source_group[i],
                         risk_impact=RiskLevel.MEDIUM
                     ))
             else:
-                for i in range(len(target_group), len(source_group)):
+                # More routes in target (REMOVED from newer version)
+                for i in range(len(source_group), len(target_group)):
                     changes.append(RouteChange(
-                        change_type="removed",
-                        old_route=source_group[i],
+                        change_type="REMOVED",
+                        old_route=target_group[i],
                         risk_impact=RiskLevel.MEDIUM
                     ))
         
@@ -406,21 +408,21 @@ class AdvancedDiffEngine:
         target_paths = {route.path for route in target_group}
         
         # Find path changes within structure
-        added_paths = target_paths - source_paths
-        removed_paths = source_paths - target_paths
+        added_paths = source_paths - target_paths  # Routes in source but not in target
+        removed_paths = target_paths - source_paths  # Routes in target but not in source
         
         for path in added_paths:
-            route = next(r for r in target_group if r.path == path)
+            route = next(r for r in source_group if r.path == path)
             changes.append(RouteChange(
-                change_type="added",
+                change_type="ADDED",
                 new_route=route,
                 risk_impact=RiskLevel.LOW
             ))
         
         for path in removed_paths:
-            route = next(r for r in source_group if r.path == path)
+            route = next(r for r in target_group if r.path == path)
             changes.append(RouteChange(
-                change_type="removed",
+                change_type="REMOVED",
                 old_route=route,
                 risk_impact=RiskLevel.LOW
             ))
@@ -464,11 +466,11 @@ class AdvancedDiffEngine:
         """Apply confidence weighting to changes"""
         for change in changes:
             # Adjust confidence based on change type and risk impact
-            if change.change_type == "removed" and change.risk_impact == RiskLevel.HIGH:
+            if change.change_type == "REMOVED" and change.risk_impact == RiskLevel.HIGH:
                 # Safely update confidence if attribute exists
                 current_confidence = getattr(change, 'confidence', 0.8)
                 setattr(change, 'confidence', min(1.0, current_confidence + 0.1))
-            elif change.change_type == "added" and change.risk_impact == RiskLevel.LOW:
+            elif change.change_type == "ADDED" and change.risk_impact == RiskLevel.LOW:
                 # Safely update confidence if attribute exists  
                 current_confidence = getattr(change, 'confidence', 0.8)
                 setattr(change, 'confidence', max(0.5, current_confidence - 0.1))
