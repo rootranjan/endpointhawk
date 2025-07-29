@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # EndPointHawk CLI service for batch scanning
+  endpointhawk-cli:
+    build: .
+    image: endpointhawk:latest
+    container_name: endpointhawk-cli
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - ENDPOINTHAWK_CACHE_DIR=/cache
+      - ENDPOINTHAWK_REPORTS_DIR=/reports
+    volumes:
+      - ./repos:/workspace:ro  # Mount repositories to scan
+      - ./reports:/reports     # Mount reports directory
+      - ./cache:/cache         # Mount cache directory
+      - ./config:/app/config:ro  # Mount custom configs
+    working_dir: /workspace
+    profiles:
+      - cli
+    command: >
+      --repo-path /workspace
+      --frameworks auto
+      --use-ai
+      --risk-threshold medium
+      --output-format json,html,sarif
+      --output-dir /reports
+      --cache-enabled
+      --performance-mode fast
+
+  # EndPointHawk Web Interface
+  endpointhawk-web:
+    build: .
+    image: endpointhawk:latest
+    container_name: endpointhawk-web
+    ports:
+      - "8182:8182"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
+    volumes:
+      - ./repos:/workspace:ro  # Mount repositories to scan
+      - ./reports:/reports     # Mount reports directory
+      - ./cache:/cache         # Mount cache directory
+      - ./config:/app/config:ro  # Mount custom configs
+    profiles:
+      - web
+    command: python3 web_cli_bridge.py
+
+  # Batch scanning service for multiple repositories
+  endpointhawk-batch:
+    build: .
+    image: endpointhawk:latest
+    container_name: endpointhawk-batch
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - ENDPOINTHAWK_CACHE_DIR=/cache
+      - ENDPOINTHAWK_REPORTS_DIR=/reports
+    volumes:
+      - ./repos:/workspace:ro  # Mount repositories to scan
+      - ./reports:/reports     # Mount reports directory
+      - ./cache:/cache         # Mount cache directory
+      - ./config:/app/config:ro  # Mount custom configs
+      - ./batch-config.json:/app/batch-config.json:ro  # Batch configuration
+    working_dir: /workspace
+    profiles:
+      - batch
+    command: >
+      --batch-repos /app/batch-config.json
+      --batch-workers 3
+      --performance-mode fast
+      --output-format json,html
+      --output-dir /reports
+
+  # Scheduled scanning service
+  endpointhawk-scheduler:
+    build: .
+    image: endpointhawk:latest
+    container_name: endpointhawk-scheduler
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - ENDPOINTHAWK_CACHE_DIR=/cache
+      - ENDPOINTHAWK_REPORTS_DIR=/reports
+      - SCAN_SCHEDULE=${SCAN_SCHEDULE:-0 2 * * *}  # Daily at 2 AM
+    volumes:
+      - ./repos:/workspace:ro  # Mount repositories to scan
+      - ./reports:/reports     # Mount reports directory
+      - ./cache:/cache         # Mount cache directory
+      - ./config:/app/config:ro  # Mount custom configs
+    profiles:
+      - scheduler
+    command: >
+      --repo-path /workspace
+      --frameworks auto
+      --use-ai
+      --risk-threshold medium
+      --output-format json,html
+      --output-dir /reports
+      --cache-enabled
+      --performance-mode fast
+
+volumes:
+  reports:
+    driver: local
+  cache:
+    driver: local
