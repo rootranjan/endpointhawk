@@ -379,13 +379,7 @@ class AttackSurfaceScanner:
         
         # Use fallback progress for Docker containers
         if is_docker:
-            # Simple progress without rich
-            self.console.print(f"[cyan]🔍 Analyzing {len(files):,} files sequentially...[/cyan]")
-            
-            # Force immediate output
-            import sys
-            sys.stdout.flush()
-            
+            # Simple progress without rich for Docker - no progress bar to avoid multiple lines
             for i, file_path in enumerate(files):
                 # Check cache first
                 file_hash = self.performance_optimizer.calculate_file_hash(file_path)
@@ -413,15 +407,6 @@ class AttackSurfaceScanner:
                 # Process routes
                 if file_routes:
                     self._add_routes_to_services(services, file_path, file_routes)
-                
-                # Update progress every 10 files or at the end
-                if (i + 1) % 10 == 0 or i == len(files) - 1:
-                    progress_pct = ((i + 1) / len(files)) * 100
-                    # Use print with flush=True for immediate output
-                    print(f"\r[green]Progress: {progress_pct:.1f}% ({i + 1}/{len(files)} files)[/green]", end="", flush=True)
-            
-            # Add newline after progress is complete
-            print()
             
             # Update cache metrics
             self.performance_optimizer.metrics.cache_hits = cache_hits

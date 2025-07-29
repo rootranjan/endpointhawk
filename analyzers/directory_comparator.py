@@ -61,9 +61,10 @@ class DirectoryComparator:
             is_docker = os.environ.get('DOCKER_CONTAINER', 'false').lower() == 'true'
             refresh_rate = 1 if is_docker else 2  # Slower refresh in Docker to prevent buffering
             
-            # Debug logging
-            self.logger.info(f"Docker environment detected: {is_docker}")
-            self.logger.info(f"Refresh rate set to: {refresh_rate}")
+            # Temporary debug output
+            print(f"DEBUG: DOCKER_CONTAINER={os.environ.get('DOCKER_CONTAINER', 'NOT_SET')}")
+            print(f"DEBUG: is_docker={is_docker}")
+            print(f"DEBUG: Using {'Docker' if is_docker else 'non-Docker'} path")
             
             # Validate directories exist
             source_path = Path(source_dir)
@@ -76,23 +77,24 @@ class DirectoryComparator:
             
             # Use simpler progress for Docker containers
             if is_docker:
-                self.logger.info("Using Docker-optimized progress display")
-                console.print("[cyan]🔍 Starting directory comparison...[/cyan]")
+                # Simple single-line progress for Docker - like pip install
+                console.print("[cyan]🔍 Comparing directories...[/cyan]", end="")
                 
                 # Simple progress without rich for Docker
                 source_files = self._get_files_to_scan(source_path)
-                console.print(f"[cyan]📁 Found {len(source_files)} files in source directory[/cyan]")
+                console.print(".", end="", flush=True)
                 source_routes = self._scan_directory(source_path, "source")
+                console.print(".", end="", flush=True)
                 
                 target_files = self._get_files_to_scan(target_path)
-                console.print(f"[cyan]📁 Found {len(target_files)} files in target directory[/cyan]")
+                console.print(".", end="", flush=True)
                 target_routes = self._scan_directory(target_path, "target")
-                
-                console.print("[cyan]🔄 Comparing routes...[/cyan]")
+                console.print(".", end="", flush=True)
                 
                 # Filter out invalid routes (file paths mistaken as API routes)
                 source_routes = self._filter_valid_routes(source_routes, str(source_path))
                 target_routes = self._filter_valid_routes(target_routes, str(target_path))
+                console.print(".", end="", flush=True)
                 
                 # Apply filters if specified
                 if config.filters:
@@ -101,16 +103,17 @@ class DirectoryComparator:
                 
                 # Compare routes
                 route_changes = self._compare_routes(source_routes, target_routes, config)
-                console.print(f"[cyan]✅ Found {len(route_changes)} route changes[/cyan]")
+                console.print(".", end="", flush=True)
                 
                 # Analyze file changes (if requested)
                 file_changes = []
                 if config.include_file_changes:
-                    console.print("[cyan]📄 Analyzing file changes...[/cyan]")
                     file_changes = self._analyze_file_changes(source_path, target_path)
-                    console.print(f"[cyan]✅ Found {len(file_changes)} file changes[/cyan]")
+                    console.print(".", end="", flush=True)
                 
-                console.print("[cyan]✅ Directory comparison completed[/cyan]")
+                # Complete the line
+                console.print(f" [green]done[/green]")
+                console.print(f"[green]✅ Found {len(route_changes)} route changes[/green]")
                 
             else:
                 # Create progress display for non-Docker environments
