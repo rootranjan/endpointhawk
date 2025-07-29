@@ -1617,12 +1617,11 @@ async def _run_directory_comparison(config: ScanConfig, comparison_config: Compa
         comparator = DirectoryComparator(scanner)
         
         # Run the comparison
-        with console.status("[spinner]Comparing directories..."):
-            comparison_result = comparator.compare_directories(
-                comparison_config.source,
-                comparison_config.target,
-                comparison_config
-            )
+        comparison_result = comparator.compare_directories(
+            comparison_config.source,
+            comparison_config.target,
+            comparison_config
+        )
         
         # Display results
         _display_comparison_results(comparison_result, console)

@@ -747,9 +747,8 @@ class ExpressDetector(BaseDetector):
         # Clean up multiple slashes
         clean_path = re.sub(r'/+', '/', clean_path)
         
-        # Convert Express params :id to OpenAPI {id}
-        clean_path = re.sub(r':(\w+)', r'{\1}', clean_path)
-        
+        # Keep original Express.js format (:rateId) for display
+        # Only normalize for internal comparison if needed
         return clean_path
     
     def _find_line_number(self, content: str, match_start: int) -> int:

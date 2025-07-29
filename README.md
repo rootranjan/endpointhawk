@@ -364,6 +364,264 @@ python3 web_cli_bridge.py
 
 ---
 
+## 🔄 **API Comparison & Change Tracking**
+
+EndPointHawk provides powerful comparison capabilities to track API changes across versions, releases, and deployments.
+
+### **📁 Directory Comparison**
+
+Compare two local directories to identify API changes between different versions or deployments.
+
+#### **Basic Directory Comparison**
+
+```bash
+# Compare current repository against an older version
+python3 endpointhawk.py \
+  --repo-path /path/to/current/repo \
+  --compare-dir /path/to/old/version \
+  --output-format json,html
+
+# Compare two different deployments
+python3 endpointhawk.py \
+  --repo-path /path/to/production/deployment \
+  --compare-dir /path/to/staging/deployment \
+  --no-ai \
+  --output-format json
+```
+
+#### **Understanding Comparison Logic**
+
+**Standard Convention (Recommended):**
+- **Source** (`--repo-path`): **Latest/Current** version (what you have now)
+- **Target** (`--compare-dir`): **Old/Previous** version (what you're comparing against)
+
+**Results Interpretation:**
+- **ADDED routes**: New endpoints in the latest version
+- **REMOVED routes**: Endpoints that existed in the old version but are no longer available
+- **MODIFIED routes**: Endpoints that changed between versions
+
+**Example:**
+```bash
+# Current repo (latest) vs Old version (v1.0.0)
+python3 endpointhawk.py \
+  --repo-path /path/to/current/repo \
+  --compare-dir /path/to/old/repo-v1.0.0
+
+# Results show:
+# - 25 ADDED routes (new in latest)
+# - 150 REMOVED routes (removed from v1.0.0)
+# - 175 HIGH RISK changes (security implications)
+```
+
+### **🏷️ Git Tag Comparison**
+
+Compare API changes between different git tags or releases.
+
+```bash
+# Compare two specific versions
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-tags v1.0.0,v2.0.0 \
+  --output-format json,html
+
+# Compare against a specific tag
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-against-tag v1.0.0 \
+  --output-format json
+```
+
+### **🌿 Git Branch Comparison**
+
+Compare API changes between different branches.
+
+```bash
+# Compare main vs develop branch
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-branches main,develop \
+  --output-format json,html
+
+# Compare feature branch against main
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-branches feature/new-api,main \
+  --output-format json
+```
+
+### **🔍 Advanced Comparison Features**
+
+#### **Filtering Comparison Results**
+
+```bash
+# Filter by framework
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-dir /path/to/old/version \
+  --filter-by "framework=express,nestjs"
+
+# Filter by HTTP method
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-dir /path/to/old/version \
+  --filter-by "method=POST,PUT,DELETE"
+
+# Filter by path pattern
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-dir /path/to/old/version \
+  --filter-by "path=/api/*"
+
+# Combine multiple filters
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-dir /path/to/old/version \
+  --filter-by "framework=express;method=POST,PUT;path=/api/v1/*"
+```
+
+#### **Different Comparison Algorithms**
+
+```bash
+# Strict comparison (exact matches only)
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-dir /path/to/old/version \
+  --diff-algorithm strict
+
+# Fuzzy comparison (similar routes)
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-dir /path/to/old/version \
+  --diff-algorithm fuzzy
+
+# Hybrid comparison (recommended)
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-dir /path/to/old/version \
+  --diff-algorithm hybrid
+```
+
+#### **Include File-Level Changes**
+
+```bash
+# Include file structure changes
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-dir /path/to/old/version \
+  --include-file-changes \
+  --output-format json,html
+```
+
+### **📊 Comparison Output Formats**
+
+#### **JSON Output**
+```bash
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-dir /path/to/old/version \
+  --output-format json \
+  --output-dir ./comparison-reports
+```
+
+**JSON Structure:**
+```json
+{
+  "comparison_summary": {
+    "source_version": "/path/to/current/repo",
+    "target_version": "/path/to/old/version", 
+    "comparison_type": "directories",
+    "route_changes": {
+      "ADDED": 33,
+      "REMOVED": 1916,
+      "MODIFIED": 0
+    },
+    "total_route_changes": 1949
+  },
+  "changes": [
+    {
+      "change_type": "REMOVED",
+      "risk_impact": "HIGH",
+      "old_route": {
+        "path": "/api/users/{id}",
+        "method": "GET",
+        "framework": "express",
+        "risk_level": "HIGH"
+      }
+    }
+  ]
+}
+```
+
+#### **HTML Report**
+```bash
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-dir /path/to/old/version \
+  --output-format html \
+  --output-dir ./comparison-reports
+```
+
+### **🎯 Use Cases & Best Practices**
+
+#### **Security Auditing**
+```bash
+# Audit API changes for security implications
+python3 endpointhawk.py \
+  --repo-path /path/to/production/repo \
+  --compare-against-tag v1.0.0 \
+  --risk-threshold high \
+  --output-format html,json
+```
+
+#### **Release Planning**
+```bash
+# Plan breaking changes for API consumers
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-tags v1.0.0,v2.0.0 \
+  --output-format html,csv
+```
+
+#### **Migration Assessment**
+```bash
+# Assess impact of API changes on integrations
+python3 endpointhawk.py \
+  --repo-path /path/to/new/architecture \
+  --compare-dir /path/to/legacy/system \
+  --filter-by "framework=express" \
+  --output-format json
+```
+
+#### **Compliance Tracking**
+```bash
+# Track API changes for compliance requirements
+python3 endpointhawk.py \
+  --repo-path /path/to/repo \
+  --compare-against-tag compliance-baseline \
+  --output-format sarif,html
+```
+
+### **⚠️ Important Notes**
+
+1. **Directory Comparison**: Requires both directories to exist locally
+2. **Git Comparison**: Requires git repository with proper history
+3. **Commit Metadata**: Only available for git-based comparisons
+4. **Performance**: Large repositories may take significant time
+5. **Memory Usage**: Enable caching for repeated comparisons
+
+### **🔄 Comparison Logic Summary**
+
+| Comparison Type | Source | Target | Use Case |
+|----------------|--------|--------|----------|
+| **Directory** | Latest version | Old version | Deployment comparison |
+| **Git Tags** | Newer tag | Older tag | Release comparison |
+| **Git Branches** | Target branch | Source branch | Feature comparison |
+| **Against Tag** | Current state | Specific tag | Baseline comparison |
+
+**Standard Convention**: Source = Newer/Current, Target = Older/Previous 
+
+---
+
 ## ⚙️ **Configuration**
 
 ### **Environment Variables**

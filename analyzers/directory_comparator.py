@@ -52,6 +52,11 @@ class DirectoryComparator:
         self.logger.info(f"Comparing directories: {source_dir} -> {target_dir}")
         
         try:
+            # Import rich components for progress tracking
+            from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+            from rich.console import Console
+            console = Console()
+            
             # Validate directories exist
             source_path = Path(source_dir)
             target_path = Path(target_dir)
@@ -61,26 +66,55 @@ class DirectoryComparator:
             if not target_path.exists():
                 raise ValueError(f"Target directory does not exist: {target_dir}")
             
-            # Scan both directories
-            source_routes = self._scan_directory(source_path, "source")
-            target_routes = self._scan_directory(target_path, "target")
-            
-            # Filter out invalid routes (file paths mistaken as API routes)
-            source_routes = self._filter_valid_routes(source_routes, str(source_path))
-            target_routes = self._filter_valid_routes(target_routes, str(target_path))
-            
-            # Apply filters if specified
-            if config.filters:
-                source_routes = self._apply_advanced_filtering(source_routes, config)
-                target_routes = self._apply_advanced_filtering(target_routes, config)
-            
-            # Compare routes
-            route_changes = self._compare_routes(source_routes, target_routes, config)
-            
-            # Get file changes if requested
-            file_changes = []
-            if config.include_file_changes:
-                file_changes = self._analyze_file_changes(source_path, target_path)
+            # Create progress display
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[bold blue]🔍 Directory Comparison"),
+                BarColumn(complete_style="green", finished_style="bright_green"),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeElapsedColumn(),
+                console=console,
+                transient=False,
+                refresh_per_second=2,  # Reduce refresh rate to prevent flickering
+                expand=False  # Prevent layout shifts
+            ) as progress:
+                
+                # Task 1: Scan source directory (includes file discovery)
+                task1 = progress.add_task("[cyan]Scanning source directory...", total=None)
+                progress.update(task1, description="[cyan]Discovering and analyzing source files...")
+                source_files = self._get_files_to_scan(source_path)
+                source_routes = self._scan_directory_with_progress(source_path, "source", progress, task1, source_files)
+                
+                # Task 2: Scan target directory (includes file discovery)
+                task2 = progress.add_task("[cyan]Scanning target directory...", total=None)
+                progress.update(task2, description="[cyan]Discovering and analyzing target files...")
+                target_files = self._get_files_to_scan(target_path)
+                target_routes = self._scan_directory_with_progress(target_path, "target", progress, task2, target_files)
+                
+                # Task 3: Compare routes
+                task3 = progress.add_task("[cyan]Comparing routes...", total=None)
+                progress.update(task3, description="[cyan]Analyzing route differences...")
+                
+                # Filter out invalid routes (file paths mistaken as API routes)
+                source_routes = self._filter_valid_routes(source_routes, str(source_path))
+                target_routes = self._filter_valid_routes(target_routes, str(target_path))
+                
+                # Apply filters if specified
+                if config.filters:
+                    source_routes = self._apply_advanced_filtering(source_routes, config)
+                    target_routes = self._apply_advanced_filtering(target_routes, config)
+                
+                # Compare routes
+                route_changes = self._compare_routes(source_routes, target_routes, config)
+                progress.update(task3, total=len(route_changes), completed=len(route_changes), description=f"[cyan]Found {len(route_changes)} route changes")
+                
+                # Task 4: Analyze file changes (if requested)
+                file_changes = []
+                if config.include_file_changes:
+                    task4 = progress.add_task("[cyan]Analyzing file changes...", total=None)
+                    progress.update(task4, description="[cyan]Comparing file structures...")
+                    file_changes = self._analyze_file_changes(source_path, target_path)
+                    progress.update(task4, total=len(file_changes), completed=len(file_changes), description=f"[cyan]Found {len(file_changes)} file changes")
             
             # Create comparison result
             result = ComparisonResult(
@@ -92,6 +126,8 @@ class DirectoryComparator:
                 scan_metadata={
                     'source_routes_count': len(source_routes),
                     'target_routes_count': len(target_routes),
+                    'source_files_count': len(source_files),
+                    'target_files_count': len(target_files),
                     'filters_applied': config.filters is not None,
                     'diff_algorithm': config.diff_algorithm
                 }
@@ -152,7 +188,7 @@ class DirectoryComparator:
 
     def _scan_directory(self, directory: Path, version_name: str) -> List[RouteInfo]:
         """
-        Scan a directory for routes using a fresh scanner instance.
+        Scan a directory for routes using a simplified approach to avoid threading issues.
         
         Args:
             directory: Directory path to scan
@@ -164,58 +200,171 @@ class DirectoryComparator:
         self.logger.info(f"Scanning {version_name} directory: {directory}")
         
         try:
-            # Create a fresh scanner instance to avoid state contamination
-            from endpointhawk_core.endpointhawk import AttackSurfaceScanner
-            from models import ScanConfig
+            # Use the same detectors as the main scanner but scan files directly
+            all_routes = []
             
-            # Create a fresh config for this directory scan
-            fresh_config = ScanConfig(
-                repo_path=str(directory),
-                frameworks=self.scanner.config.frameworks,
-                use_ai_analysis=self.scanner.config.use_ai_analysis,
-                risk_threshold=self.scanner.config.risk_threshold,
-                resolve_prefixes=self.scanner.config.resolve_prefixes,
-                prefix_config_path=self.scanner.config.prefix_config_path,
-                output_formats=self.scanner.config.output_formats,
-                output_directory=self.scanner.config.output_directory,
-                organization_patterns=self.scanner.config.organization_patterns,
-                prefixes_only=self.scanner.config.prefixes_only
-            )
+            # Get all relevant files to scan
+            files_to_scan = self._get_files_to_scan(directory)
+            self.logger.info(f"Found {len(files_to_scan)} files to scan in {version_name}")
             
-            # Create fresh scanner instance
-            fresh_scanner = AttackSurfaceScanner(fresh_config)
-            
-            # Run the scan - simplified approach using asyncio.run in a thread
-            import asyncio
-            import threading
-            from concurrent.futures import ThreadPoolExecutor
-            
-            def run_scan_in_thread():
-                """Run async scan in a separate thread to avoid context issues"""
+            # Scan each file using the same detectors
+            for file_path in files_to_scan:
                 try:
-                    return asyncio.run(fresh_scanner.scan_repository())
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                    
+                    # Try each detector
+                    for detector in self.scanner.detectors:
+                        if detector.can_handle_file(str(file_path), content):
+                            file_routes = detector.detect_routes(str(file_path), content)
+                            
+                            # Add commit information to each route
+                            for route in file_routes:
+                                # Check if the directory is a git repository and add commit info
+                                if hasattr(detector, 'add_commit_info_to_route'):
+                                    detector.add_commit_info_to_route(route, str(directory))
+                            
+                            all_routes.extend(file_routes)
+                            
                 except Exception as e:
-                    self.logger.error(f"Thread scan error: {e}")
-                    return None
+                    self.logger.debug(f"Could not read file {file_path}: {e}")
+                    continue
             
-            # Use ThreadPoolExecutor to run the async scan
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(run_scan_in_thread)
-                scan_result = future.result(timeout=300)  # 5 minute timeout
-            
-            # Extract routes from scan result
-            if scan_result and hasattr(scan_result, 'routes') and scan_result.routes:
-                self.logger.info(f"Scan completed for {version_name}: {len(scan_result.routes)} routes found")
-                return scan_result.routes
-            else:
-                self.logger.warning(f"No routes found in {version_name} directory")
-                return []
+            self.logger.info(f"Scan completed for {version_name}: {len(all_routes)} routes found")
+            return all_routes
                 
         except Exception as e:
             self.logger.error(f"Error scanning {version_name} directory: {e}")
             import traceback
             self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return []
+    
+    def _scan_directory_with_progress(self, directory: Path, version_name: str, progress, task_id, files_to_scan: List[Path]) -> List[RouteInfo]:
+        """
+        Scan a directory for routes with progress tracking.
+        
+        Args:
+            directory: Directory path to scan
+            version_name: Human-readable version name for logging
+            progress: Rich progress object
+            task_id: Progress task ID
+            files_to_scan: List of files to scan for this directory
+            
+        Returns:
+            List of discovered routes
+        """
+        self.logger.info(f"Scanning {version_name} directory: {directory}")
+        
+        try:
+            # Set the total for progress tracking
+            progress.update(task_id, total=len(files_to_scan), description=f"[cyan]Found {len(files_to_scan)} files in {version_name}")
+            
+            # Use the same detectors as the main scanner but scan files directly
+            all_routes = []
+            completed_files = 0
+            
+            # Scan each file using the same detectors
+            for file_path in files_to_scan:
+                try:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                    
+                    # Try each detector
+                    for detector in self.scanner.detectors:
+                        if detector.can_handle_file(str(file_path), content):
+                            file_routes = detector.detect_routes(str(file_path), content)
+                            
+                            # Add commit information to each route
+                            for route in file_routes:
+                                # Check if the directory is a git repository and add commit info
+                                if hasattr(detector, 'add_commit_info_to_route'):
+                                    detector.add_commit_info_to_route(route, str(directory))
+                            
+                            all_routes.extend(file_routes)
+                            
+                except Exception as e:
+                    self.logger.debug(f"Could not read file {file_path}: {e}")
+                    continue
+                
+                # Update progress
+                completed_files += 1
+                progress.update(task_id, completed=completed_files, description=f"[cyan]Analyzing {version_name} files... ({completed_files}/{len(files_to_scan)})")
+            
+            self.logger.info(f"Scan completed for {version_name}: {len(all_routes)} routes found")
+            
+            # Final progress update to ensure completion
+            progress.update(task_id, completed=len(files_to_scan), description=f"[cyan]Completed {version_name} scan: {len(all_routes)} routes found")
+            
+            return all_routes
+                
+        except Exception as e:
+            self.logger.error(f"Error scanning {version_name} directory: {e}")
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
+            return []
+    
+    def _get_files_to_scan(self, directory: Path) -> List[Path]:
+        """
+        Get list of files to scan in the directory.
+        
+        Args:
+            directory: Directory to scan
+            
+        Returns:
+            List of file paths to scan
+        """
+        files = []
+        
+        # Common file extensions for web frameworks
+        extensions = [
+            '.js', '.ts', '.jsx', '.tsx',  # JavaScript/TypeScript
+            '.py', '.pyx',                 # Python
+            '.java', '.kt',                # Java/Kotlin
+            '.go',                         # Go
+            '.php',                        # PHP
+            '.rb',                         # Ruby
+            '.cs',                         # C#
+            '.dart',                       # Dart/Flutter
+            '.proto',                      # Protocol Buffers
+            '.yaml', '.yml',               # YAML configs
+            '.json',                       # JSON configs
+            '.xml',                        # XML configs
+        ]
+        
+        # Scan for files with relevant extensions
+        for ext in extensions:
+            files.extend(directory.rglob(f"*{ext}"))
+        
+        # Also look for specific framework files
+        framework_files = [
+            'package.json', 'package-lock.json', 'yarn.lock',
+            'requirements.txt', 'Pipfile', 'poetry.lock',
+            'pom.xml', 'build.gradle', 'build.gradle.kts',
+            'go.mod', 'go.sum',
+            'composer.json', 'composer.lock',
+            'Gemfile', 'Gemfile.lock',
+            'pubspec.yaml', 'pubspec.lock',
+            '*.proto',
+            '*.yaml', '*.yml',
+            '*.json',
+            '*.xml'
+        ]
+        
+        for pattern in framework_files:
+            if '*' in pattern:
+                files.extend(directory.rglob(pattern))
+            else:
+                specific_file = directory / pattern
+                if specific_file.exists():
+                    files.append(specific_file)
+        
+        # Remove duplicates and filter out non-files
+        unique_files = list(set([f for f in files if f.is_file()]))
+        
+        # Sort for consistent results
+        unique_files.sort()
+        
+        return unique_files
     
     def _apply_filters(self, routes: List[RouteInfo], filters) -> List[RouteInfo]:
         """
@@ -284,6 +433,7 @@ class DirectoryComparator:
         if hasattr(config, 'diff_algorithm') and config.diff_algorithm in ['hybrid', 'semantic', 'structural', 'performance']:
             return self._use_advanced_diff_algorithms(source_routes, target_routes, config)
         
+        # Use simple comparison for 'strict', 'fuzzy', and other algorithms
         # Fallback to simple comparison for backward compatibility
         changes = []
         
@@ -297,30 +447,30 @@ class DirectoryComparator:
         source_keys = set(source_dict.keys())
         target_keys = set(target_dict.keys())
         
-        # Find added routes (in target but not in source)
-        added_keys = target_keys - source_keys
+        # Find added routes (in source but not in target) - NEW routes in source
+        added_keys = source_keys - target_keys
         self.logger.debug(f"Added route keys: {added_keys}")
         for key in added_keys:
-            route = target_dict[key]
+            route = source_dict[key]
             risk_impact = self._assess_change_risk("ADDED", None, route)
             changes.append(RouteChange(
                 change_type="ADDED",
                 new_route=route,
                 risk_impact=risk_impact,
-                change_details={'reason': 'Route added in target directory'}
+                change_details={'reason': 'Route added in source directory (newer version)'}
             ))
         
-        # Find removed routes (in source but not in target)  
-        removed_keys = source_keys - target_keys
+        # Find removed routes (in target but not in source) - OLD routes removed from source
+        removed_keys = target_keys - source_keys
         self.logger.debug(f"Removed route keys: {removed_keys}")
         for key in removed_keys:
-            route = source_dict[key]
+            route = target_dict[key]
             risk_impact = self._assess_change_risk("REMOVED", route, None)
             changes.append(RouteChange(
                 change_type="REMOVED",
                 old_route=route,
                 risk_impact=risk_impact,
-                change_details={'reason': 'Route removed from target directory'}
+                change_details={'reason': 'Route removed from source directory (older version)'}
             ))
         
         # Find potentially modified routes (same key, different details)
@@ -642,7 +792,7 @@ class DirectoryComparator:
             return True
         
         # Route path looks like a filesystem path (more than 3 directory levels)
-        if route_path.count('/') > 4:  # e.g., /test-n8n/api-gateway/src/utils/something
+        if route_path.count('/') > 8:  # Increased from 6 to 8 to allow longer legitimate API routes
             return True
         
         return False
