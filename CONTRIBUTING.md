@@ -8,7 +8,7 @@ Thank you for your interest in contributing to EndPointHawk! 🦅
 
 ```bash
 # Fork and clone
-git clone https://github.com/YOUR_USERNAME/endpointhawk.git
+git clone https://github.com/rootranjan/endpointhawk.git
 cd endpointhawk
 
 # Create virtual environment
