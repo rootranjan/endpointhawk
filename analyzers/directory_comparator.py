@@ -61,11 +61,6 @@ class DirectoryComparator:
             is_docker = os.environ.get('DOCKER_CONTAINER', 'false').lower() == 'true'
             refresh_rate = 1 if is_docker else 2  # Slower refresh in Docker to prevent buffering
             
-            # Temporary debug output
-            print(f"DEBUG: DOCKER_CONTAINER={os.environ.get('DOCKER_CONTAINER', 'NOT_SET')}")
-            print(f"DEBUG: is_docker={is_docker}")
-            print(f"DEBUG: Using {'Docker' if is_docker else 'non-Docker'} path")
-            
             # Validate directories exist
             source_path = Path(source_dir)
             target_path = Path(target_dir)
@@ -82,19 +77,19 @@ class DirectoryComparator:
                 
                 # Simple progress without rich for Docker
                 source_files = self._get_files_to_scan(source_path)
-                console.print(".", end="", flush=True)
+                console.print(".", end="")
                 source_routes = self._scan_directory(source_path, "source")
-                console.print(".", end="", flush=True)
+                console.print(".", end="")
                 
                 target_files = self._get_files_to_scan(target_path)
-                console.print(".", end="", flush=True)
+                console.print(".", end="")
                 target_routes = self._scan_directory(target_path, "target")
-                console.print(".", end="", flush=True)
+                console.print(".", end="")
                 
                 # Filter out invalid routes (file paths mistaken as API routes)
                 source_routes = self._filter_valid_routes(source_routes, str(source_path))
                 target_routes = self._filter_valid_routes(target_routes, str(target_path))
-                console.print(".", end="", flush=True)
+                console.print(".", end="")
                 
                 # Apply filters if specified
                 if config.filters:
@@ -103,18 +98,37 @@ class DirectoryComparator:
                 
                 # Compare routes
                 route_changes = self._compare_routes(source_routes, target_routes, config)
-                console.print(".", end="", flush=True)
+                console.print(".", end="")
                 
                 # Analyze file changes (if requested)
                 file_changes = []
                 if config.include_file_changes:
                     file_changes = self._analyze_file_changes(source_path, target_path)
-                    console.print(".", end="", flush=True)
+                    console.print(".", end="")
                 
                 # Complete the line
                 console.print(f" [green]done[/green]")
                 console.print(f"[green]✅ Found {len(route_changes)} route changes[/green]")
                 
+                # Create comparison result for Docker path
+                result = ComparisonResult(
+                    source_version=str(source_path),
+                    target_version=str(target_path),
+                    comparison_type="directories",
+                    changes=route_changes,
+                    file_changes=file_changes,
+                    scan_metadata={
+                        'source_routes_count': len(source_routes),
+                        'target_routes_count': len(target_routes),
+                        'source_files_count': len(source_files),
+                        'target_files_count': len(target_files),
+                        'filters_applied': config.filters is not None,
+                        'diff_algorithm': config.diff_algorithm
+                    }
+                )
+                
+                return result
+            
             else:
                 # Create progress display for non-Docker environments
                 with Progress(
@@ -247,7 +261,11 @@ class DirectoryComparator:
         Returns:
             List of discovered routes
         """
-        self.logger.info(f"Scanning {version_name} directory: {directory}")
+        # Check if running in Docker to avoid multi-line output
+        is_docker = os.environ.get('DOCKER_CONTAINER', 'false').lower() == 'true'
+        
+        if not is_docker:
+            self.logger.info(f"Scanning {version_name} directory: {directory}")
         
         try:
             # Use the same detectors as the main scanner but scan files directly
@@ -255,7 +273,9 @@ class DirectoryComparator:
             
             # Get all relevant files to scan
             files_to_scan = self._get_files_to_scan(directory)
-            self.logger.info(f"Found {len(files_to_scan)} files to scan in {version_name}")
+            
+            if not is_docker:
+                self.logger.info(f"Found {len(files_to_scan)} files to scan in {version_name}")
             
             # Scan each file using the same detectors
             for file_path in files_to_scan:
@@ -280,7 +300,8 @@ class DirectoryComparator:
                     self.logger.debug(f"Could not read file {file_path}: {e}")
                     continue
             
-            self.logger.info(f"Scan completed for {version_name}: {len(all_routes)} routes found")
+            if not is_docker:
+                self.logger.info(f"Scan completed for {version_name}: {len(all_routes)} routes found")
             return all_routes
                 
         except Exception as e:
