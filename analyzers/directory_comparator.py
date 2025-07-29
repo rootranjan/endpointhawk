@@ -57,6 +57,14 @@ class DirectoryComparator:
             from rich.console import Console
             console = Console()
             
+            # Docker-specific progress configuration
+            is_docker = os.environ.get('DOCKER_CONTAINER', 'false').lower() == 'true'
+            refresh_rate = 1 if is_docker else 2  # Slower refresh in Docker to prevent buffering
+            
+            # Debug logging
+            self.logger.info(f"Docker environment detected: {is_docker}")
+            self.logger.info(f"Refresh rate set to: {refresh_rate}")
+            
             # Validate directories exist
             source_path = Path(source_dir)
             target_path = Path(target_dir)
@@ -66,34 +74,21 @@ class DirectoryComparator:
             if not target_path.exists():
                 raise ValueError(f"Target directory does not exist: {target_dir}")
             
-            # Create progress display
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[bold blue]🔍 Directory Comparison"),
-                BarColumn(complete_style="green", finished_style="bright_green"),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                TimeElapsedColumn(),
-                console=console,
-                transient=False,
-                refresh_per_second=2,  # Reduce refresh rate to prevent flickering
-                expand=False  # Prevent layout shifts
-            ) as progress:
+            # Use simpler progress for Docker containers
+            if is_docker:
+                self.logger.info("Using Docker-optimized progress display")
+                console.print("[cyan]🔍 Starting directory comparison...[/cyan]")
                 
-                # Task 1: Scan source directory (includes file discovery)
-                task1 = progress.add_task("[cyan]Scanning source directory...", total=None)
-                progress.update(task1, description="[cyan]Discovering and analyzing source files...")
+                # Simple progress without rich for Docker
                 source_files = self._get_files_to_scan(source_path)
-                source_routes = self._scan_directory_with_progress(source_path, "source", progress, task1, source_files)
+                console.print(f"[cyan]📁 Found {len(source_files)} files in source directory[/cyan]")
+                source_routes = self._scan_directory(source_path, "source")
                 
-                # Task 2: Scan target directory (includes file discovery)
-                task2 = progress.add_task("[cyan]Scanning target directory...", total=None)
-                progress.update(task2, description="[cyan]Discovering and analyzing target files...")
                 target_files = self._get_files_to_scan(target_path)
-                target_routes = self._scan_directory_with_progress(target_path, "target", progress, task2, target_files)
+                console.print(f"[cyan]📁 Found {len(target_files)} files in target directory[/cyan]")
+                target_routes = self._scan_directory(target_path, "target")
                 
-                # Task 3: Compare routes
-                task3 = progress.add_task("[cyan]Comparing routes...", total=None)
-                progress.update(task3, description="[cyan]Analyzing route differences...")
+                console.print("[cyan]🔄 Comparing routes...[/cyan]")
                 
                 # Filter out invalid routes (file paths mistaken as API routes)
                 source_routes = self._filter_valid_routes(source_routes, str(source_path))
@@ -106,15 +101,67 @@ class DirectoryComparator:
                 
                 # Compare routes
                 route_changes = self._compare_routes(source_routes, target_routes, config)
-                progress.update(task3, total=len(route_changes), completed=len(route_changes), description=f"[cyan]Found {len(route_changes)} route changes")
+                console.print(f"[cyan]✅ Found {len(route_changes)} route changes[/cyan]")
                 
-                # Task 4: Analyze file changes (if requested)
+                # Analyze file changes (if requested)
                 file_changes = []
                 if config.include_file_changes:
-                    task4 = progress.add_task("[cyan]Analyzing file changes...", total=None)
-                    progress.update(task4, description="[cyan]Comparing file structures...")
+                    console.print("[cyan]📄 Analyzing file changes...[/cyan]")
                     file_changes = self._analyze_file_changes(source_path, target_path)
-                    progress.update(task4, total=len(file_changes), completed=len(file_changes), description=f"[cyan]Found {len(file_changes)} file changes")
+                    console.print(f"[cyan]✅ Found {len(file_changes)} file changes[/cyan]")
+                
+                console.print("[cyan]✅ Directory comparison completed[/cyan]")
+                
+            else:
+                # Create progress display for non-Docker environments
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[bold blue]🔍 Directory Comparison"),
+                    BarColumn(complete_style="green", finished_style="bright_green"),
+                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                    TimeElapsedColumn(),
+                    console=console,
+                    transient=False,
+                    refresh_per_second=refresh_rate,  # Use Docker-optimized refresh rate
+                    expand=False  # Prevent layout shifts
+                ) as progress:
+                
+                    # Task 1: Scan source directory (includes file discovery)
+                    task1 = progress.add_task("[cyan]Scanning source directory...", total=None)
+                    progress.update(task1, description="[cyan]Discovering and analyzing source files...")
+                    source_files = self._get_files_to_scan(source_path)
+                    source_routes = self._scan_directory_with_progress(source_path, "source", progress, task1, source_files)
+                    
+                    # Task 2: Scan target directory (includes file discovery)
+                    task2 = progress.add_task("[cyan]Scanning target directory...", total=None)
+                    progress.update(task2, description="[cyan]Discovering and analyzing target files...")
+                    target_files = self._get_files_to_scan(target_path)
+                    target_routes = self._scan_directory_with_progress(target_path, "target", progress, task2, target_files)
+                    
+                    # Task 3: Compare routes
+                    task3 = progress.add_task("[cyan]Comparing routes...", total=None)
+                    progress.update(task3, description="[cyan]Analyzing route differences...")
+                    
+                    # Filter out invalid routes (file paths mistaken as API routes)
+                    source_routes = self._filter_valid_routes(source_routes, str(source_path))
+                    target_routes = self._filter_valid_routes(target_routes, str(target_path))
+                    
+                    # Apply filters if specified
+                    if config.filters:
+                        source_routes = self._apply_advanced_filtering(source_routes, config)
+                        target_routes = self._apply_advanced_filtering(target_routes, config)
+                    
+                    # Compare routes
+                    route_changes = self._compare_routes(source_routes, target_routes, config)
+                    progress.update(task3, total=len(route_changes), completed=len(route_changes), description=f"[cyan]Found {len(route_changes)} route changes")
+                    
+                    # Task 4: Analyze file changes (if requested)
+                    file_changes = []
+                    if config.include_file_changes:
+                        task4 = progress.add_task("[cyan]Analyzing file changes...", total=None)
+                        progress.update(task4, description="[cyan]Comparing file structures...")
+                        file_changes = self._analyze_file_changes(source_path, target_path)
+                        progress.update(task4, total=len(file_changes), completed=len(file_changes), description=f"[cyan]Found {len(file_changes)} file changes")
             
             # Create comparison result
             result = ComparisonResult(
@@ -257,7 +304,7 @@ class DirectoryComparator:
         
         try:
             # Set the total for progress tracking
-            progress.update(task_id, total=len(files_to_scan), description=f"[cyan]Found {len(files_to_scan)} files in {version_name}")
+            progress.update(task_id, total=len(files_to_scan), description=f"[cyan]Analyzing {version_name} files...")
             
             # Use the same detectors as the main scanner but scan files directly
             all_routes = []
@@ -286,14 +333,15 @@ class DirectoryComparator:
                     self.logger.debug(f"Could not read file {file_path}: {e}")
                     continue
                 
-                # Update progress
+                # Update progress (less frequently to reduce output)
                 completed_files += 1
-                progress.update(task_id, completed=completed_files, description=f"[cyan]Analyzing {version_name} files... ({completed_files}/{len(files_to_scan)})")
+                if completed_files % max(1, len(files_to_scan) // 10) == 0 or completed_files == len(files_to_scan):
+                    progress.update(task_id, completed=completed_files, description=f"[cyan]Analyzing {version_name} files... ({completed_files}/{len(files_to_scan)})")
             
             self.logger.info(f"Scan completed for {version_name}: {len(all_routes)} routes found")
             
             # Final progress update to ensure completion
-            progress.update(task_id, completed=len(files_to_scan), description=f"[cyan]Completed {version_name} scan: {len(all_routes)} routes found")
+            progress.update(task_id, completed=len(files_to_scan), description=f"[cyan]Completed {version_name} scan")
             
             return all_routes
                 
