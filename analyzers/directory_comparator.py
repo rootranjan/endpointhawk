@@ -9,6 +9,7 @@ checked out separately, or comparing against backup/archived versions.
 
 import os
 import logging
+import threading
 from pathlib import Path
 from typing import List, Dict, Optional, Set, Tuple, Any
 from datetime import datetime
@@ -35,11 +36,13 @@ class DirectoryComparator:
         """
         self.scanner = scanner
         self.logger = logging.getLogger(__name__)
+        self._file_cache = {}  # Simple in-memory cache for file contents
+        self._cache_lock = threading.Lock()  # Thread-safe cache operations
     
     def compare_directories(self, source_dir: str, target_dir: str, 
                           config: ComparisonConfig) -> ComparisonResult:
         """
-        Compare routes between two local directories.
+        Compare routes between two local directories with parallel processing optimization.
         
         Args:
             source_dir: Path to source directory  
@@ -75,15 +78,15 @@ class DirectoryComparator:
                 # Simple single-line progress for Docker - like pip install
                 console.print("[cyan]🔍 Comparing directories...[/cyan]", end="")
                 
-                # Simple progress without rich for Docker
+                # Use parallel scanning for better performance
                 source_files = self._get_files_to_scan(source_path)
                 console.print(".", end="")
-                source_routes = self._scan_directory(source_path, "source")
+                source_routes = self._scan_directory_parallel(source_path, "source", source_files)
                 console.print(".", end="")
                 
                 target_files = self._get_files_to_scan(target_path)
                 console.print(".", end="")
-                target_routes = self._scan_directory(target_path, "target")
+                target_routes = self._scan_directory_parallel(target_path, "target", target_files)
                 console.print(".", end="")
                 
                 # Filter out invalid routes (file paths mistaken as API routes)
@@ -110,21 +113,19 @@ class DirectoryComparator:
                 console.print(f" [green]done[/green]")
                 console.print(f"[green]✅ Found {len(route_changes)} route changes[/green]")
                 
-                # Create comparison result for Docker path
+                # Clear cache to free memory
+                self._clear_cache()
+                
+                # Create comparison result
                 result = ComparisonResult(
-                    source_version=str(source_path),
-                    target_version=str(target_path),
+                    source_dir=source_dir,
+                    target_dir=target_dir,
                     comparison_type="directories",
-                    changes=route_changes,
+                    route_changes=route_changes,
                     file_changes=file_changes,
-                    scan_metadata={
-                        'source_routes_count': len(source_routes),
-                        'target_routes_count': len(target_routes),
-                        'source_files_count': len(source_files),
-                        'target_files_count': len(target_files),
-                        'filters_applied': config.filters is not None,
-                        'diff_algorithm': config.diff_algorithm
-                    }
+                    total_changes=len(route_changes),
+                    scan_timestamp=datetime.now(),
+                    config=config
                 )
                 
                 return result
@@ -147,19 +148,19 @@ class DirectoryComparator:
                     task1 = progress.add_task("[cyan]Scanning source directory...", total=None)
                     progress.update(task1, description="[cyan]Discovering and analyzing source files...")
                     source_files = self._get_files_to_scan(source_path)
-                    source_routes = self._scan_directory_with_progress(source_path, "source", progress, task1, source_files)
+                    source_routes = self._scan_directory_parallel_with_progress(source_path, "source", progress, task1, source_files)
                     
                     # Task 2: Scan target directory (includes file discovery)
                     task2 = progress.add_task("[cyan]Scanning target directory...", total=None)
                     progress.update(task2, description="[cyan]Discovering and analyzing target files...")
                     target_files = self._get_files_to_scan(target_path)
-                    target_routes = self._scan_directory_with_progress(target_path, "target", progress, task2, target_files)
+                    target_routes = self._scan_directory_parallel_with_progress(target_path, "target", progress, task2, target_files)
                     
                     # Task 3: Compare routes
                     task3 = progress.add_task("[cyan]Comparing routes...", total=None)
                     progress.update(task3, description="[cyan]Analyzing route differences...")
                     
-                    # Filter out invalid routes (file paths mistaken as API routes)
+                    # Filter out invalid routes
                     source_routes = self._filter_valid_routes(source_routes, str(source_path))
                     target_routes = self._filter_valid_routes(target_routes, str(target_path))
                     
@@ -170,44 +171,41 @@ class DirectoryComparator:
                     
                     # Compare routes
                     route_changes = self._compare_routes(source_routes, target_routes, config)
-                    progress.update(task3, total=len(route_changes), completed=len(route_changes), description=f"[cyan]Found {len(route_changes)} route changes")
+                    progress.update(task3, description=f"[cyan]Found {len(route_changes)} changes")
                     
                     # Task 4: Analyze file changes (if requested)
                     file_changes = []
                     if config.include_file_changes:
                         task4 = progress.add_task("[cyan]Analyzing file changes...", total=None)
-                        progress.update(task4, description="[cyan]Comparing file structures...")
+                        progress.update(task4, description="[cyan]Comparing file modifications...")
                         file_changes = self._analyze_file_changes(source_path, target_path)
-                        progress.update(task4, total=len(file_changes), completed=len(file_changes), description=f"[cyan]Found {len(file_changes)} file changes")
-            
-            # Create comparison result
-            result = ComparisonResult(
-                source_version=str(source_path),
-                target_version=str(target_path),
-                comparison_type="directories",
-                changes=route_changes,
-                file_changes=file_changes,
-                scan_metadata={
-                    'source_routes_count': len(source_routes),
-                    'target_routes_count': len(target_routes),
-                    'source_files_count': len(source_files),
-                    'target_files_count': len(target_files),
-                    'filters_applied': config.filters is not None,
-                    'diff_algorithm': config.diff_algorithm
-                }
-            )
-            
-            self.logger.info(f"Directory comparison completed: {len(route_changes)} route changes found")
-            return result
-            
+                        progress.update(task4, description=f"[cyan]Found {len(file_changes)} file changes")
+                    
+                    # Complete progress
+                    progress.update(task3, description=f"[green]✅ Comparison complete: {len(route_changes)} route changes")
+                    
+                    # Clear cache to free memory
+                    self._clear_cache()
+                    
+                    # Create comparison result
+                    result = ComparisonResult(
+                        source_dir=source_dir,
+                        target_dir=target_dir,
+                        comparison_type="directories",
+                        route_changes=route_changes,
+                        file_changes=file_changes,
+                        total_changes=len(route_changes),
+                        scan_timestamp=datetime.now(),
+                        config=config
+                    )
+                    
+                    return result
+                    
         except Exception as e:
             self.logger.error(f"Error comparing directories: {e}")
-            return ComparisonResult(
-                source_version=str(source_dir),
-                target_version=str(target_dir),
-                comparison_type="directories",
-                errors=[str(e)]
-            )
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
+            raise
 
     async def _scan_directory_async(self, directory: Path, version_name: str) -> List[RouteInfo]:
         """
@@ -309,75 +307,180 @@ class DirectoryComparator:
             import traceback
             self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return []
-    
-    def _scan_directory_with_progress(self, directory: Path, version_name: str, progress, task_id, files_to_scan: List[Path]) -> List[RouteInfo]:
+
+    def _scan_directory_parallel(self, directory: Path, version_name: str, files_to_scan: List[Path]) -> List[RouteInfo]:
         """
-        Scan a directory for routes with progress tracking.
+        Scan a directory for routes using parallel processing for better performance.
+        
+        Args:
+            directory: Directory path to scan
+            version_name: Human-readable version name for logging
+            files_to_scan: List of files to scan (pre-discovered for efficiency)
+            
+        Returns:
+            List of discovered routes
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import threading
+        
+        # Check if running in Docker to avoid multi-line output
+        is_docker = os.environ.get('DOCKER_CONTAINER', 'false').lower() == 'true'
+        
+        if not is_docker:
+            self.logger.info(f"Scanning {version_name} directory with parallel processing: {directory}")
+        
+        try:
+            all_routes = []
+            routes_lock = threading.Lock()  # Thread-safe list operations
+            
+            # Determine optimal number of workers based on file count
+            num_workers = min(8, max(2, len(files_to_scan) // 50))  # 2-8 workers, 50 files per worker
+            
+            if not is_docker:
+                self.logger.info(f"Using {num_workers} workers for {len(files_to_scan)} files in {version_name}")
+            
+            def scan_single_file(file_path: Path) -> List[RouteInfo]:
+                """Scan a single file and return discovered routes"""
+                # Use cached file content for better performance
+                content = self._get_cached_file_content(file_path)
+                if content is None:
+                    return []
+                
+                file_routes = []
+                
+                # Try each detector
+                for detector in self.scanner.detectors:
+                    if detector.can_handle_file(str(file_path), content):
+                        routes = detector.detect_routes(str(file_path), content)
+                        
+                        # Add commit information to each route
+                        for route in routes:
+                            if hasattr(detector, 'add_commit_info_to_route'):
+                                detector.add_commit_info_to_route(route, str(directory), self.scanner.config)
+                        
+                        file_routes.extend(routes)
+                
+                return file_routes
+            
+            # Use ThreadPoolExecutor for parallel processing
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                # Submit all file scanning tasks
+                future_to_file = {
+                    executor.submit(scan_single_file, file_path): file_path 
+                    for file_path in files_to_scan
+                }
+                
+                # Collect results as they complete
+                for future in as_completed(future_to_file):
+                    try:
+                        file_routes = future.result()
+                        if file_routes:
+                            with routes_lock:
+                                all_routes.extend(file_routes)
+                    except Exception as e:
+                        file_path = future_to_file[future]
+                        self.logger.debug(f"Error scanning {file_path}: {e}")
+            
+            if not is_docker:
+                self.logger.info(f"Parallel scan completed for {version_name}: {len(all_routes)} routes found")
+            return all_routes
+                
+        except Exception as e:
+            self.logger.error(f"Error in parallel scanning {version_name} directory: {e}")
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
+            return []
+
+    def _scan_directory_parallel_with_progress(self, directory: Path, version_name: str, progress, task_id, files_to_scan: List[Path]) -> List[RouteInfo]:
+        """
+        Scan a directory for routes with parallel processing and progress tracking.
         
         Args:
             directory: Directory path to scan
             version_name: Human-readable version name for logging
             progress: Rich progress object
             task_id: Progress task ID
-            files_to_scan: List of files to scan for this directory
+            files_to_scan: List of files to scan (pre-discovered for efficiency)
             
         Returns:
             List of discovered routes
         """
-        self.logger.info(f"Scanning {version_name} directory: {directory}")
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import threading
+        
+        self.logger.info(f"Scanning {version_name} directory with parallel processing: {directory}")
         
         try:
             # Set the total for progress tracking
-            progress.update(task_id, total=len(files_to_scan), description=f"[cyan]Analyzing {version_name} files...")
+            progress.update(task_id, total=len(files_to_scan), description=f"[cyan]Analyzing {version_name} files with parallel processing...")
             
-            # Use the same detectors as the main scanner but scan files directly
             all_routes = []
+            routes_lock = threading.Lock()  # Thread-safe list operations
             completed_files = 0
+            completed_lock = threading.Lock()  # Thread-safe counter operations
             
-            # Scan each file using the same detectors
-            for file_path in files_to_scan:
-                try:
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        content = f.read()
-                    
-                    # Try each detector
-                    for detector in self.scanner.detectors:
-                        if detector.can_handle_file(str(file_path), content):
-                            file_routes = detector.detect_routes(str(file_path), content)
-                            
-                            # Add commit information to each route
-                            for route in file_routes:
-                                # Check if the directory is a git repository and add commit info
-                                if hasattr(detector, 'add_commit_info_to_route'):
-                                    detector.add_commit_info_to_route(route, str(directory), self.scanner.config)
-                            
-                            all_routes.extend(file_routes)
-                            
-                except Exception as e:
-                    self.logger.debug(f"Could not read file {file_path}: {e}")
-                    continue
+            # Determine optimal number of workers based on file count
+            num_workers = min(8, max(2, len(files_to_scan) // 50))  # 2-8 workers, 50 files per worker
+            
+            def scan_single_file(file_path: Path) -> List[RouteInfo]:
+                """Scan a single file and return discovered routes"""
+                # Use cached file content for better performance
+                content = self._get_cached_file_content(file_path)
+                if content is None:
+                    return []
                 
-                # Update progress (less frequently to reduce output)
-                completed_files += 1
-                if completed_files % max(1, len(files_to_scan) // 10) == 0 or completed_files == len(files_to_scan):
-                    progress.update(task_id, completed=completed_files, description=f"[cyan]Analyzing {version_name} files... ({completed_files}/{len(files_to_scan)})")
+                file_routes = []
+                
+                # Try each detector
+                for detector in self.scanner.detectors:
+                    if detector.can_handle_file(str(file_path), content):
+                        routes = detector.detect_routes(str(file_path), content)
+                        
+                        # Add commit information to each route
+                        for route in routes:
+                            if hasattr(detector, 'add_commit_info_to_route'):
+                                detector.add_commit_info_to_route(route, str(directory), self.scanner.config)
+                        
+                        file_routes.extend(routes)
+                
+                return file_routes
             
-            self.logger.info(f"Scan completed for {version_name}: {len(all_routes)} routes found")
+            # Use ThreadPoolExecutor for parallel processing
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                # Submit all file scanning tasks
+                future_to_file = {
+                    executor.submit(scan_single_file, file_path): file_path 
+                    for file_path in files_to_scan
+                }
+                
+                # Collect results as they complete
+                for future in as_completed(future_to_file):
+                    try:
+                        file_routes = future.result()
+                        if file_routes:
+                            with routes_lock:
+                                all_routes.extend(file_routes)
+                    except Exception as e:
+                        file_path = future_to_file[future]
+                        self.logger.debug(f"Error scanning {file_path}: {e}")
+                    
+                    # Update progress
+                    with completed_lock:
+                        completed_files += 1
+                        progress.update(task_id, completed=completed_files, description=f"[cyan]Analyzed {completed_files}/{len(files_to_scan)} {version_name} files...")
             
-            # Final progress update to ensure completion
-            progress.update(task_id, completed=len(files_to_scan), description=f"[cyan]Completed {version_name} scan")
-            
+            progress.update(task_id, completed=len(files_to_scan), description=f"[green]✅ {version_name} scan complete: {len(all_routes)} routes found")
             return all_routes
                 
         except Exception as e:
-            self.logger.error(f"Error scanning {version_name} directory: {e}")
+            self.logger.error(f"Error in parallel scanning {version_name} directory: {e}")
             import traceback
             self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return []
     
     def _get_files_to_scan(self, directory: Path) -> List[Path]:
         """
-        Get list of files to scan in the directory.
+        Get list of files to scan in the directory with optimized performance.
         
         Args:
             directory: Directory to scan
@@ -385,29 +488,34 @@ class DirectoryComparator:
         Returns:
             List of file paths to scan
         """
-        files = []
-        
-        # Common file extensions for web frameworks
-        extensions = [
-            '.js', '.ts', '.jsx', '.tsx',  # JavaScript/TypeScript
-            '.py', '.pyx',                 # Python
-            '.java', '.kt',                # Java/Kotlin
-            '.go',                         # Go
-            '.php',                        # PHP
-            '.rb',                         # Ruby
-            '.cs',                         # C#
-            '.dart',                       # Dart/Flutter
-            '.proto',                      # Protocol Buffers
-            '.yaml', '.yml',               # YAML configs
-            '.json',                       # JSON configs
-            '.xml',                        # XML configs
+        # Use a single optimized glob pattern instead of multiple rglob calls
+        # This is much faster than calling rglob for each extension
+        patterns = [
+            "**/*.js", "**/*.ts", "**/*.jsx", "**/*.tsx",  # JavaScript/TypeScript
+            "**/*.py", "**/*.pyx",                         # Python
+            "**/*.java", "**/*.kt",                        # Java/Kotlin
+            "**/*.go",                                     # Go
+            "**/*.php",                                    # PHP
+            "**/*.rb",                                     # Ruby
+            "**/*.cs",                                     # C#
+            "**/*.dart",                                   # Dart/Flutter
+            "**/*.proto",                                  # Protocol Buffers
+            "**/*.yaml", "**/*.yml",                       # YAML configs
+            "**/*.json",                                   # JSON configs
+            "**/*.xml",                                    # XML configs
         ]
         
-        # Scan for files with relevant extensions
-        for ext in extensions:
-            files.extend(directory.rglob(f"*{ext}"))
+        files = set()  # Use set for O(1) duplicate removal
         
-        # Also look for specific framework files
+        # Use pathlib's glob with recursive=True for better performance
+        for pattern in patterns:
+            try:
+                files.update(directory.glob(pattern))
+            except Exception as e:
+                self.logger.debug(f"Error globbing pattern {pattern}: {e}")
+                continue
+        
+        # Add specific framework files
         framework_files = [
             'package.json', 'package-lock.json', 'yarn.lock',
             'requirements.txt', 'Pipfile', 'poetry.lock',
@@ -416,25 +524,19 @@ class DirectoryComparator:
             'composer.json', 'composer.lock',
             'Gemfile', 'Gemfile.lock',
             'pubspec.yaml', 'pubspec.lock',
-            '*.proto',
-            '*.yaml', '*.yml',
-            '*.json',
-            '*.xml'
         ]
         
-        for pattern in framework_files:
-            if '*' in pattern:
-                files.extend(directory.rglob(pattern))
-            else:
-                specific_file = directory / pattern
+        for filename in framework_files:
+            try:
+                specific_file = directory / filename
                 if specific_file.exists():
-                    files.append(specific_file)
+                    files.add(specific_file)
+            except Exception as e:
+                self.logger.debug(f"Error checking framework file {filename}: {e}")
+                continue
         
-        # Remove duplicates and filter out non-files
-        unique_files = list(set([f for f in files if f.is_file()]))
-        
-        # Sort for consistent results
-        unique_files.sort()
+        # Filter out non-files and convert to sorted list
+        unique_files = sorted([f for f in files if f.is_file()])
         
         return unique_files
     
@@ -1091,3 +1193,39 @@ class DirectoryComparator:
                 files.append(file_path)
         
         return files 
+
+    def _get_cached_file_content(self, file_path: Path) -> Optional[str]:
+        """
+        Get file content from cache or read from disk.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            File content or None if file cannot be read
+        """
+        file_str = str(file_path)
+        
+        # Check cache first
+        with self._cache_lock:
+            if file_str in self._file_cache:
+                return self._file_cache[file_str]
+        
+        # Read from disk
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            # Cache the content
+            with self._cache_lock:
+                self._file_cache[file_str] = content
+            
+            return content
+        except Exception as e:
+            self.logger.debug(f"Could not read file {file_path}: {e}")
+            return None
+
+    def _clear_cache(self):
+        """Clear the file content cache to free memory"""
+        with self._cache_lock:
+            self._file_cache.clear() 

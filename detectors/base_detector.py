@@ -249,10 +249,15 @@ class BaseDetector(ABC):
                 return route
             
             # Extract commit information for this specific line
+            prefer_original_author = True
+            if config and hasattr(config, 'prefer_original_author'):
+                prefer_original_author = config.prefer_original_author
+                
             commit_info = extract_commit_info_for_route(
                 repo_path=repo_path,
                 file_path=route.file_path,
-                line_number=route.line_number
+                line_number=route.line_number,
+                prefer_original_author=prefer_original_author
             )
             
             # Add commit information to the route
@@ -268,6 +273,17 @@ class BaseDetector(ABC):
                     route.commit_date = datetime.fromisoformat(commit_date_str)
                 except ValueError:
                     route.commit_date = None
+            
+            # Add authorship history if enabled
+            if config and hasattr(config, 'include_authorship_history') and config.include_authorship_history:
+                from utils.git_utils import extract_authorship_history_for_route
+                authorship_history = extract_authorship_history_for_route(
+                    repo_path=repo_path,
+                    file_path=route.file_path,
+                    line_number=route.line_number,
+                    max_history=5
+                )
+                route.authorship_history = authorship_history
             
             return route
             

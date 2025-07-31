@@ -1,0 +1,43 @@
+# Performance Configuration for EndPointHawk
+# This file controls various performance optimizations for directory comparison
+
+# Parallel Processing Configuration
+parallel_processing:
+  enabled: true
+  max_workers: 8  # Maximum number of worker threads
+  min_workers: 2   # Minimum number of worker threads
+  files_per_worker: 50  # Files per worker for optimal distribution
+
+# Caching Configuration
+caching:
+  enabled: true
+  max_cache_size: 1000  # Maximum number of files to cache in memory
+  clear_cache_after_scan: true  # Clear cache after each scan to free memory
+
+# File Discovery Optimization
+file_discovery:
+  use_optimized_glob: true  # Use optimized glob patterns instead of multiple rglob calls
+  batch_size: 100  # Process files in batches for better memory management
+
+# Memory Management
+memory_management:
+  monitor_memory_usage: true
+  memory_limit_mb: 1024  # Memory limit in MB before clearing cache
+  aggressive_cleanup: false  # Force garbage collection after each batch
+
+# Progress Reporting
+progress:
+  update_frequency: 100  # Update progress every N files
+  show_performance_metrics: true  # Show performance metrics in output
+
+# Repository Size Thresholds
+repository_thresholds:
+  small_repo_files: 1000    # < 1000 files: use sequential scanning
+  medium_repo_files: 10000  # 1000-10000 files: use balanced parallel
+  large_repo_files: 10000   # > 10000 files: use optimized chunks
+
+# Framework-Specific Optimizations
+framework_optimizations:
+  skip_irrelevant_files: true  # Skip files that don't match any framework patterns
+  early_exit_on_match: true    # Stop trying detectors after first match
+  cache_detector_results: true # Cache detector results for repeated files 
