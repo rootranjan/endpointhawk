@@ -174,6 +174,7 @@ class RouteInfo(BaseModel):
     commit_hash: Optional[str] = None
     commit_date: Optional[datetime] = None
     commit_message: Optional[str] = None
+    authorship_history: List[Dict[str, Any]] = Field(default_factory=list)  # Complete authorship timeline
     
     class Config:
         use_enum_values = True
@@ -200,7 +201,8 @@ class RouteInfo(BaseModel):
             'commit_author_email': self.commit_author_email,
             'commit_hash': self.commit_hash,
             'commit_date': self.commit_date.isoformat() if self.commit_date and hasattr(self.commit_date, 'isoformat') else str(self.commit_date) if self.commit_date else None,
-            'commit_message': self.commit_message
+            'commit_message': self.commit_message,
+            'authorship_history': self.authorship_history
         }
 
 class ServiceInfo(BaseModel):
@@ -242,6 +244,8 @@ class ScanConfig(BaseModel):
     
     # Git commit information fields
     include_commit_info: bool = True
+    prefer_original_author: bool = True  # If True, try to get original author instead of last committer
+    include_authorship_history: bool = False  # If True, include complete authorship history for each route
     
     class Config:
         use_enum_values = True

@@ -4,12 +4,23 @@ Git utilities for EndPointHawk
 
 Provides functionality to extract git commit information for routes,
 including author details, commit hashes, and timestamps.
+
+IMPORTANT: This module now handles the distinction between original authors and last committers.
+For merge commits, it can attempt to find the original author of the changes instead of
+just showing the person who last merged the changes. This is controlled by the
+prefer_original_author parameter.
+
+Example:
+    - Original commit: Khoa Nguyen adds new API endpoint
+    - Merge commit: Weihang Huang merges the PR
+    - With prefer_original_author=True: Shows Khoa Nguyen as the author
+    - With prefer_original_author=False: Shows Weihang Huang as the author
 """
 
 import os
 import subprocess
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 from datetime import datetime
 from pathlib import Path
 
@@ -87,13 +98,14 @@ class GitInfoExtractor:
         
         return is_git_repo
     
-    def get_commit_info_for_line(self, file_path: str, line_number: int) -> Dict[str, Optional[str]]:
+    def get_commit_info_for_line(self, file_path: str, line_number: int, prefer_original_author: bool = True) -> Dict[str, Optional[str]]:
         """
         Get commit information for a specific line in a file.
         
         Args:
             file_path: Path to the file (relative to repo root)
             line_number: Line number in the file
+            prefer_original_author: If True, try to get the original author instead of last committer
             
         Returns:
             Dictionary with commit information
@@ -141,11 +153,150 @@ class GitInfoExtractor:
                     logger.warning(f"Git blame failed for {file_path}:{line_number}: {result.stderr}")
                     return self._empty_commit_info()
             
-            return self._parse_blame_output(result.stdout, line_number)
+            commit_info = self._parse_blame_output(result.stdout, line_number)
+            
+            # If we prefer original author and this looks like a merge commit, try to get the original author
+            if prefer_original_author and commit_info.get('commit_message', '').startswith('Merge'):
+                original_author_info = self._get_original_author_for_merge_commit(
+                    commit_info.get('commit_hash'), file_path, line_number
+                )
+                if original_author_info:
+                    # Use original author info but keep the merge commit hash and message
+                    commit_info.update(original_author_info)
+            
+            return commit_info
             
         except Exception as e:
             logger.warning(f"Error getting commit info for {file_path}:{line_number}: {e}")
             return self._empty_commit_info()
+    
+    def get_line_authorship_history(self, file_path: str, line_number: int, max_history: int = 5) -> List[Dict[str, Optional[str]]]:
+        """
+        Get the complete authorship history for a specific line.
+        
+        Args:
+            file_path: Path to the file (relative to repo root)
+            line_number: Line number in the file
+            max_history: Maximum number of historical entries to return
+            
+        Returns:
+            List of dictionaries with commit information, ordered from newest to oldest
+        """
+        try:
+            # Convert to relative path from repo root
+            abs_file_path = Path(file_path).resolve()
+            rel_file_path = abs_file_path.relative_to(self.repo_path)
+            
+            # Get the complete blame history for this line
+            cmd = [
+                'git', 'blame', '-L', f'{line_number},{line_number}',
+                '--porcelain', '--reverse', str(rel_file_path)
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            
+            if result.returncode != 0:
+                logger.warning(f"Git blame history failed for {file_path}:{line_number}: {result.stderr}")
+                return []
+            
+            # Parse the blame history
+            history = self._parse_blame_history_output(result.stdout, max_history)
+            return history
+            
+        except Exception as e:
+            logger.warning(f"Error getting authorship history for {file_path}:{line_number}: {e}")
+            return []
+    
+    def _get_original_author_for_merge_commit(self, commit_hash: str, file_path: str, line_number: int) -> Optional[Dict[str, str]]:
+        """
+        For merge commits, try to find the original author of the changes.
+        
+        Args:
+            commit_hash: The merge commit hash
+            file_path: Path to the file
+            line_number: Line number in the file
+            
+        Returns:
+            Dictionary with original author information or None if not found
+        """
+        try:
+            if not commit_hash:
+                return None
+                
+            # Convert to relative path from repo root
+            abs_file_path = Path(file_path).resolve()
+            rel_file_path = abs_file_path.relative_to(self.repo_path)
+            
+            # Get the parent commits of the merge commit
+            cmd = ['git', 'log', '--format=%H', '--max-count=2', commit_hash + '^']
+            result = subprocess.run(
+                cmd,
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode != 0:
+                return None
+                
+            parent_commits = result.stdout.strip().split('\n')
+            if len(parent_commits) < 2:
+                return None
+            
+            # Check which parent introduced the change
+            for parent in parent_commits:
+                if not parent.strip():
+                    continue
+                    
+                # Check if this line exists in the parent commit
+                cmd = [
+                    'git', 'blame', '-L', f'{line_number},{line_number}',
+                    '--porcelain', parent, '--', str(rel_file_path)
+                ]
+                
+                result = subprocess.run(
+                    cmd,
+                    cwd=self.repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    # Parse the blame output to get the original author
+                    lines = result.stdout.strip().split('\n')
+                    original_author = None
+                    original_author_email = None
+                    
+                    for line in lines:
+                        if line.startswith('author '):
+                            original_author = line[7:]
+                        elif line.startswith('author-mail '):
+                            email = line[12:].strip()
+                            if email.startswith('<') and email.endswith('>'):
+                                email = email[1:-1]
+                            original_author_email = email
+                        elif line.startswith('\t'):
+                            break
+                    
+                    if original_author and original_author_email:
+                        return {
+                            'commit_author': original_author,
+                            'commit_author_email': original_author_email
+                        }
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Error getting original author for merge commit {commit_hash}: {e}")
+            return None
     
     def get_commit_info_for_file(self, file_path: str) -> Dict[str, Optional[str]]:
         """
@@ -266,7 +417,7 @@ class GitInfoExtractor:
         """Check if the current directory is a git repository"""
         return self._is_git_repo
 
-def extract_commit_info_for_route(repo_path: str, file_path: str, line_number: int) -> Dict[str, Optional[str]]:
+def extract_commit_info_for_route(repo_path: str, file_path: str, line_number: int, prefer_original_author: bool = True) -> Dict[str, Optional[str]]:
     """
     Extract commit information for a specific route.
     
@@ -274,6 +425,7 @@ def extract_commit_info_for_route(repo_path: str, file_path: str, line_number: i
         repo_path: Path to the git repository
         file_path: Path to the file containing the route
         line_number: Line number where the route is defined
+        prefer_original_author: If True, try to get the original author instead of last committer
         
     Returns:
         Dictionary with commit information
@@ -289,7 +441,7 @@ def extract_commit_info_for_route(repo_path: str, file_path: str, line_number: i
                 'commit_message': None
             }
         
-        return extractor.get_commit_info_for_line(file_path, line_number)
+        return extractor.get_commit_info_for_line(file_path, line_number, prefer_original_author)
         
     except Exception as e:
         logger.warning(f"Error extracting commit info: {e}")
@@ -299,4 +451,28 @@ def extract_commit_info_for_route(repo_path: str, file_path: str, line_number: i
             'commit_author_email': None,
             'commit_date': None,
             'commit_message': None
-        } 
+        }
+
+def extract_authorship_history_for_route(repo_path: str, file_path: str, line_number: int, max_history: int = 5) -> List[Dict[str, Optional[str]]]:
+    """
+    Extract complete authorship history for a specific route.
+    
+    Args:
+        repo_path: Path to the git repository
+        file_path: Path to the file containing the route
+        line_number: Line number where the route is defined
+        max_history: Maximum number of historical entries to return
+        
+    Returns:
+        List of dictionaries with commit information, ordered from newest to oldest
+    """
+    try:
+        extractor = GitInfoExtractor(repo_path)
+        if not extractor.is_git_repo():
+            return []
+        
+        return extractor.get_line_authorship_history(file_path, line_number, max_history)
+        
+    except Exception as e:
+        logger.warning(f"Error extracting authorship history: {e}")
+        return [] 
