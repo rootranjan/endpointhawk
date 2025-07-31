@@ -38,6 +38,7 @@ class DirectoryComparator:
         self.logger = logging.getLogger(__name__)
         self._file_cache = {}  # Simple in-memory cache for file contents
         self._cache_lock = threading.Lock()  # Thread-safe cache operations
+        self._git_lock = threading.Lock()  # Thread-safe Git operations
     
     def compare_directories(self, source_dir: str, target_dir: str, 
                           config: ComparisonConfig) -> ComparisonResult:
@@ -118,14 +119,19 @@ class DirectoryComparator:
                 
                 # Create comparison result
                 result = ComparisonResult(
-                    source_dir=source_dir,
-                    target_dir=target_dir,
+                    source_version=source_dir,
+                    target_version=target_dir,
                     comparison_type="directories",
-                    route_changes=route_changes,
+                    changes=route_changes,
                     file_changes=file_changes,
-                    total_changes=len(route_changes),
-                    scan_timestamp=datetime.now(),
-                    config=config
+                    scan_metadata={
+                        'source_routes_count': len(source_routes),
+                        'target_routes_count': len(target_routes),
+                        'source_files_count': len(source_files),
+                        'target_files_count': len(target_files),
+                        'filters_applied': config.filters is not None,
+                        'diff_algorithm': config.diff_algorithm
+                    }
                 )
                 
                 return result
@@ -189,14 +195,19 @@ class DirectoryComparator:
                     
                     # Create comparison result
                     result = ComparisonResult(
-                        source_dir=source_dir,
-                        target_dir=target_dir,
+                        source_version=source_dir,
+                        target_version=target_dir,
                         comparison_type="directories",
-                        route_changes=route_changes,
+                        changes=route_changes,
                         file_changes=file_changes,
-                        total_changes=len(route_changes),
-                        scan_timestamp=datetime.now(),
-                        config=config
+                        scan_metadata={
+                            'source_routes_count': len(source_routes),
+                            'target_routes_count': len(target_routes),
+                            'source_files_count': len(source_files),
+                            'target_files_count': len(target_files),
+                            'filters_applied': config.filters is not None,
+                            'diff_algorithm': config.diff_algorithm
+                        }
                     )
                     
                     return result

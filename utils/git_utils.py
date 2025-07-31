@@ -26,12 +26,16 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+import threading
+
 class GitInfoExtractor:
     """Extract git commit information for files and specific lines"""
     
     # Class-level cache to avoid repeated warnings for the same repository
     _git_repo_cache = {}
     _warning_logged = set()
+    _git_config_lock = threading.Lock()  # Thread-safe Git config operations
+    _safe_directories_added = set()  # Track which directories have been added to safe.directory
     
     def __init__(self, repo_path: str):
         """
@@ -60,19 +64,26 @@ class GitInfoExtractor:
             ])
             
             if ci_env:
-                # Add repository to safe.directory to handle ownership issues
+                # Add repository to safe.directory to handle ownership issues (thread-safe)
                 repo_str = str(self.repo_path)
-                result = subprocess.run(
-                    ['git', 'config', '--global', '--add', 'safe.directory', repo_str],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                
-                if result.returncode == 0:
-                    logger.debug(f"Added {repo_str} to Git safe.directory for CI environment")
-                else:
-                    logger.warning(f"Failed to add {repo_str} to Git safe.directory: {result.stderr}")
+                with self._git_config_lock:
+                    # Check if we've already added this directory
+                    if repo_str in self._safe_directories_added:
+                        logger.debug(f"Directory {repo_str} already added to Git safe.directory")
+                        return
+                    
+                    result = subprocess.run(
+                        ['git', 'config', '--global', '--add', 'safe.directory', repo_str],
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    
+                    if result.returncode == 0:
+                        logger.debug(f"Added {repo_str} to Git safe.directory for CI environment")
+                        self._safe_directories_added.add(repo_str)
+                    else:
+                        logger.warning(f"Failed to add {repo_str} to Git safe.directory: {result.stderr}")
                     
         except Exception as e:
             logger.warning(f"Error configuring Git for CI environment: {e}")
